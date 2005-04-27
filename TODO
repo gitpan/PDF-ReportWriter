@@ -1,0 +1,6 @@
+- Support for adding to existing PDFs - so we can have multiple data sets on a single report
+- Move page footer code to the end ( in the save method ) so we can print the total page count on each page ( Page N of M )
+- Improve font support
+- Colour support
+- Image support
+- Add more paper definitions ( only have A4 / letter currently )

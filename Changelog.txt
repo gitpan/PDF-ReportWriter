@@ -1,0 +1,16 @@
+CHANGELOG
+
+Version 0.2, released 27-Apr-2005
+    
+    Fixed bug in group handling that was preventing the special 'GrandTotal' group header from being rendered
+    Added a much-requested demo application
+    
+Version 0.1, released 26-Apr-2005
+
+    First Version :)
+    Table-based text layout engine with cell borders
+    Text alignment inside cells
+    Basic aggregate commands ( sum, count )
+    Page headers / footers
+    Group headers / footers ( unlimited )
+    POD documentation

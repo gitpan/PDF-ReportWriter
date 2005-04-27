@@ -1,0 +1,8 @@
+COPYRIGHT
+Changelog.txt
+MANIFEST
+Makefile.PL
+TODO
+demo.pl
+lib/PDF/ReportWriter.pm
+META.yml                                 Module meta-data (added by MakeMaker)
