@@ -1,5 +1,11 @@
 CHANGELOG
 
+Version 0.3, released 08-May-2005
+    
+    Bold & Centre field headers
+    Fixed bug in page counting that would 'remember' ( somehow ) the page count from previous reports
+    Do page footers in a separate pass when saving so we can write 'Page N of M' instead of just 'Page N'
+
 Version 0.2, released 27-Apr-2005
     
     Fixed bug in group handling that was preventing the special 'GrandTotal' group header from being rendered

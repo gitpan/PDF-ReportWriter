@@ -20,11 +20,11 @@ use constant letter_x	=> 8.5 * in;		# x points in a letter page
 use constant letter_y	=> 11 * in;		# y points in a letter page
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.2';
+	$PDF::ReportWriter::VERSION = '0.3';
 }
 
 # Globals
-my ( $page, $txt, $x, $y, $fields_def, $page_count, $cell_spacing, $page_width, $page_height, $line,
+my ( $page, $txt, $x, $y, $fields_def, $cell_spacing, $page_width, $page_height, $line,
     $need_data_header, $page_footer_and_margin, @group_header_queue );
 
 sub new {
@@ -166,7 +166,7 @@ sub render_data {
 	}
 	
 	# And finally the page footer
-	$self->page_footer;
+	#$self->page_footer;
 	
 }
 
@@ -197,8 +197,6 @@ sub new_page {
 	$line = $page->gfx;
 	$line->strokecolor("grey");
 	
-	$page_count ++;
-	
 }
 
 sub group_header {
@@ -211,7 +209,7 @@ sub group_header {
 	my $y_needed = $page_footer_and_margin + ( $self->{data}->{max_font_size} * 2 ) + ( $group->{header}->{font_size} * 2 );
 	
 	if ($y - $y_needed < 0) {
-		$self->page_footer;
+		#$self->page_footer;
 		$self->new_page;
 	}
 	
@@ -231,7 +229,7 @@ sub group_footer {
 	my $y_needed = $page_footer_and_margin + ( $self->{data}->{font_size} * 2 ) + ( $group->{footer}->{font_size} * 2 );
 	
 	if ($y - $y_needed < 0) {
-		$self->page_footer;
+		#$self->page_footer;
 		$self->new_page;
 	}
 	
@@ -241,33 +239,33 @@ sub group_footer {
 	
 }
 
-sub page_footer {
-	
-	# Renders a page footer - currently a DateTime stamp and a page number.
-	
-	my $self = shift;
-	
-	$txt->font( $self->{fonts}->{Times}->{Bold}, 8 );
-	
-	$txt->translate( $self->{x_margin} + $cell_spacing, $self->{y_margin} );
-	$txt->text("Rendered on " . localtime time);
-	
-	$txt->translate( $page_width - $self->{x_margin} - $cell_spacing, $self->{y_margin} );
-	$txt->text_right("Page " . $page_count);
-	
-}
+#sub page_footer {
+#	
+#	# Renders a page footer - currently a DateTime stamp and a page number.
+#	
+#	my $self = shift;
+#	
+#	$txt->font( $self->{fonts}->{Times}->{Bold}, 8 );
+#	
+#	$txt->translate( $self->{x_margin} + $cell_spacing, $self->{y_margin} );
+#	$txt->text("Rendered on " . localtime time);
+#	
+#	$txt->translate( $page_width - $self->{x_margin} - $cell_spacing, $self->{y_margin} );
+#	$txt->text_right("Page " . $self->{page_count});
+#	
+#}
 
 sub render_row {
 	
 	my ( $self, $fields, $row, $type, $no_cell_border ) = @_;
 	
-	# $fields		- a hash of field definitions
+	# $fields	- a hash of field definitions
 	# $row		- the current row to render
 	# $type		- possible values are:
-	#				- header				- prints a row of field names
-	#				- data				- prints a row of data
-	#				- group_header		- prints a row of group header
-	#				- group_footer		- prints a row of group footer
+	#			- header		- prints a row of field names
+	#			- data			- prints a row of data
+	#			- group_header		- prints a row of group header
+	#			- group_footer		- prints a row of group footer
 	
 	my $y_needed;
 	
@@ -280,7 +278,7 @@ sub render_row {
 	
 	# Page Footer / New Page / Page Header if necessary
 	if ( $y - (  ( $cell_spacing * 2 ) + $page_footer_and_margin ) < 0 ) {
-			$self->page_footer;
+			#$self->page_footer;
 			$self->new_page;
 	}
 	
@@ -307,8 +305,9 @@ sub render_row {
 		my $string;
 		
 		# Set the font and size
-		# We currently default to Bold if we're doing a header. We also check for an specific font for this field, or fall back on the report default
-		if ($type eq "group_header" || $type eq "group_footer") {
+		# We currently default to Bold if we're doing a header
+		# We also check for an specific font for this field, or fall back on the report default
+		if ($type =~ /header/ ) {
 			$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Bold}, $field->{font_size} || $self->{default_font_size} );
 		} else {
 			$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Roman}, $field->{font_size} || $self->{default_font_size } );
@@ -351,16 +350,16 @@ sub render_row {
 		}
 		
 		# Alignment
-		if ($field->{align} eq "right") {
-			$txt->translate ( $field->{x_text} + $field->{text_width}, $y + $cell_spacing );
-			$txt->text_right($string);
-		} elsif ($field->{align} eq "centre") {
+		if ($field->{align} eq "centre" || $type eq "header") {
 			# Calculate the width of the string, and move to the right so there's an even gap at both sides, and render left-aligned from there
 			my $string_width = $txt->advancewidth($string);
 			my $x_offset = ( $field->{text_width} - $string_width ) / 2;
 			my $x_anchor = $field->{x_text} + $x_offset;
 			$txt->translate( $x_anchor, $y + $cell_spacing );
 			$txt->text($string);
+		} elsif ($field->{align} eq "right") {
+			$txt->translate ( $field->{x_text} + $field->{text_width}, $y + $cell_spacing );
+			$txt->text_right($string);
 		} else {
 			# Default alignment if left-aligned
 			$txt->translate( $field->{x_text}, $y + $cell_spacing );
@@ -399,7 +398,25 @@ sub render_row {
 }
 
 sub save {
+	
 	my $self = shift;
+	
+	# We first loop through all the pages and add footers to them
+	for my $this_page_no (0 .. $self->{page_count}) {
+		
+		$txt = $self->{pages}[$this_page_no]->text;
+		$txt->fillcolor("black");
+		
+		$txt->font( $self->{fonts}->{Times}->{Bold}, 8 );
+		
+		$txt->translate( $self->{x_margin} + $cell_spacing, $self->{y_margin} );
+		$txt->text("Rendered on " . localtime time);
+		
+		$txt->translate( $page_width - $self->{x_margin} - $cell_spacing, $self->{y_margin} );
+		$txt->text_right("Page " . ($this_page_no + 1) . " of " . ($self->{page_count} + 1) . " pages");
+		
+	}
+	
 	$self->{pdf}->saveas($self->{destination});
 	$self->{pdf}->end();
 }
