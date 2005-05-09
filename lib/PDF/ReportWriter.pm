@@ -20,7 +20,7 @@ use constant letter_x	=> 8.5 * in;		# x points in a letter page
 use constant letter_y	=> 11 * in;		# y points in a letter page
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.3';
+	$PDF::ReportWriter::VERSION = '0.4';
 }
 
 # Globals
@@ -124,6 +124,14 @@ sub render_data {
 				$field_definition->{border_width} = ( $page_width - ( $self->{x_margin} * 2 ) ) * $field_definition->{percent} / 100;
 				$field_definition->{text_width} = $field_definition->{border_width} - $self->{data}->{max_font_size};
 				$x += $field_definition->{border_width};
+				# For aggregate functions, we need the name of the group, which is used later
+				# to retrieve the aggregate values ( which are stored against the group,
+				# hence the need for the group name ). However when rendering a row,
+				# we don't have access to the group *name*, so storing it in the 'text'
+				# key is a nice way around this
+				if ($field_definition->{aggregate_source}) {
+					$field_definition->{text} = $group_definition->{name};
+				}
 			}
 		}
 		# Set all group values to a special character so we recogcise that we are entering a new value for each of them ...
@@ -162,11 +170,10 @@ sub render_data {
 	
 	# The final group footers will not have been triggered ( only happens when we get a *new* group ), so we do them now
 	foreach my $group ( reverse @{$self->{data}->{groups}} ) {
-		$self->group_footer($group);
+		if (scalar(@{$group->{footer}})) {
+			$self->group_footer($group);
+		}
 	}
-	
-	# And finally the page footer
-	#$self->page_footer;
 	
 }
 
@@ -215,7 +222,9 @@ sub group_header {
 	
 	$self->render_row($group->{header}, $group->{value}, "group_header");
 	
-	$y -= $group->{header}->{font_size} * 2;
+	# Multiplying by 2 will give us enough room for a 'normal' looking space,
+	# but we want a bit extra for group headers
+	$y -= $group->{header}->{font_size} * 2.5;
 	
 }
 
@@ -225,8 +234,7 @@ sub group_footer {
 	
 	my ( $self, $group ) = @_;
 		
-	# Test if we should start a new page
-	my $y_needed = $page_footer_and_margin + ( $self->{data}->{font_size} * 2 ) + ( $group->{footer}->{font_size} * 2 );
+	my $y_needed = $page_footer_and_margin + ( $self->{data}->{font_size} * 2 ) + ($group->{footer}->{font_size} * 2);
 	
 	if ($y - $y_needed < 0) {
 		#$self->page_footer;
@@ -235,25 +243,11 @@ sub group_footer {
 	
 	$self->render_row($group->{footer}, $group->{value}, "group_footer");
 	
-	$y -= $group->{footer}->{font_size} * 2;
+	# Multiplying by 2 will give us enough room for a 'normal' looking space,
+	# but we want a bit extra for group headers	
+	$y -= $group->{footer}->{font_size} * 2.5;
 	
 }
-
-#sub page_footer {
-#	
-#	# Renders a page footer - currently a DateTime stamp and a page number.
-#	
-#	my $self = shift;
-#	
-#	$txt->font( $self->{fonts}->{Times}->{Bold}, 8 );
-#	
-#	$txt->translate( $self->{x_margin} + $cell_spacing, $self->{y_margin} );
-#	$txt->text("Rendered on " . localtime time);
-#	
-#	$txt->translate( $page_width - $self->{x_margin} - $cell_spacing, $self->{y_margin} );
-#	$txt->text_right("Page " . $self->{page_count});
-#	
-#}
 
 sub render_row {
 	
@@ -301,12 +295,11 @@ sub render_row {
 			$line->stroke;
 		}
 		
-		# Figure out what we're putting into the current cell, and set the font
-		my $string;
-		
-		# Set the font and size
+		# Figure out what we're putting into the current cell and set the font and size
 		# We currently default to Bold if we're doing a header
 		# We also check for an specific font for this field, or fall back on the report default
+		my $string;
+		
 		if ($type =~ /header/ ) {
 			$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Bold}, $field->{font_size} || $self->{default_font_size} );
 		} else {
@@ -334,13 +327,17 @@ sub render_row {
 		}
 		
 		# Apply type formatting ( eg currency )
-		if ( $field->{type} eq "currency" && $type ne "header" ) {
+		if ( $field->{type} =~ /currency/ && $type ne "header" ) {
+			my $decimal_fill = 1;
+			if ($field->{type} eq "currency:no_fill") {
+				$decimal_fill = 0;
+			}
 			my $dollar_formatter = new Number::Format(
-													thousands_sep	=> ',',
-													decimal_point	=> '.',
-													decimal_fill		=> 1,
-													int_curr_symbol	=> 'USD'
-							  );
+									thousands_sep	=> ',',
+									decimal_point	=> '.',
+									decimal_fill	=> $decimal_fill,
+									int_curr_symbol	=> 'USD'
+								 );
 			$string = "\$" . $dollar_formatter->format_number($string);
 		}
 		
@@ -469,7 +466,6 @@ my $group = [
                                                 font_size          => 12,
                                                 align              => "right",
                                                 aggregate_source   => 1,
-                                                text               => "WeekOfMonth",
                                                 type               => "currency"
                                   ]
    }
@@ -563,7 +559,7 @@ and store the results ( attached to the field ) for later use in group footers.
 
 =head2 type
 
-The only possible value currrently is "currency".
+The only possible values currrently are 'currency' and 'currency:no_fill'.
 
 =head1 GROUP DEFINITIONS
 
@@ -589,8 +585,6 @@ Consequently, most attributes that work for field cells also work for group cell
 =head2 aggregate_source
 
 This is used to retrieve the results of an aggregate_function ( see above ).
-*** NOTE *** You MUST ( currently ) define the 'text' of a cell as the group's *name* for this to work properly.
-I'm working on removing thie requirement.
 
 =head1 REPORT DEFINITION
 

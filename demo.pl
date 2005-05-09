@@ -6,6 +6,11 @@
 # verified, and should be considered an "artist's impression" of the
 # revenue of the pinacle of the free world's democratic structure
 
+# I'm playing with XML::Simple for the definitions. At the moment, the format is a little
+# unintuituve. If anyone has suggestions for a better way to get the data to / from an XML file,
+# then I *really* wanna hear about it. You can comment out the XML::Simple bit if you can't be
+# bothered installing it ... it currently just dumps stuff to the console for me to ponder.
+
 use strict;
 
 use PDF::ReportWriter;
@@ -54,7 +59,6 @@ my $groups = [
 						font_size		=> 12,
 						align			=> "right",
 						aggregate_source	=> 1,
-						text			=> "GrandTotals",
 						type			=> "currency"
 					}
 		]
@@ -74,7 +78,6 @@ my $groups = [
 						font_size		=> 12,
 						align			=> "right",
 						aggregate_source	=> 1,
-						text			=> "WeekOfMonth",
 						type			=> "currency"
 					}
 		]
@@ -102,7 +105,6 @@ my $groups = [
 						font_size		=> 12,
 						align			=> "right",
 						aggregate_source	=> 1,
-						text			=> "FullDate",
 						type			=> "currency"
 					}
 		]

@@ -1,5 +1,11 @@
 CHANGELOG
 
+Version 0.4, released 09-May-2005
+    
+    Check for group footer definitions in final run before actually calling group_footer() on them
+    Added currency:no_fill field type ... if you don't want your amounts filled out to 2 decimal places
+    Remove requirement of setting the 'text' key to the group name for aggregate results in group footers
+    
 Version 0.3, released 08-May-2005
     
     Bold & Centre field headers
