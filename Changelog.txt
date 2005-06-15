@@ -1,5 +1,12 @@
 CHANGELOG
 
+Version 0.5, released 15-Jun-2005
+    
+    Added support for images - scaled to fit to the current cell ( not finalised - comments welcome )
+    Support multiple 'render_data' operations - you can keep passing new data ( or new groups / fields / data )
+    Added support for colour
+    Added support colour_func - a user-defined function to set the colour based on the current data
+    
 Version 0.4, released 09-May-2005
     
     Check for group footer definitions in final run before actually calling group_footer() on them

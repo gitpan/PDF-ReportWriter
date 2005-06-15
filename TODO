@@ -1,5 +1,3 @@
-- Support for adding to existing PDFs - so we can have multiple data sets on a single report
 - Improve font support
 - Colour support
-- Image support
 - Add more paper definitions ( only have A4 / letter currently )

@@ -14,7 +14,6 @@
 use strict;
 
 use PDF::ReportWriter;
-use XML::Simple;
 
 use constant mm		=> 72/25.4;		# 25.4 mm in an inch, 72 points in an inch
 
@@ -23,7 +22,8 @@ my $fields = [
 			name			=> "Company",
 			percent			=> 82,
 			font_size		=> 12,
-			align			=> "left"
+			align			=> "left",
+			colour_func		=> sub { company_colour(@_); }
 		},
 		{
 			name			=> "Amount",
@@ -44,7 +44,8 @@ my $groups = [
 						percent			=> 100,
 						font_size		=> 16,
 						align			=> "centre",
-						text			=> "Donations to Republican party between 03-Jan-2005 and 10-Jan-2005"
+						text			=> "Donations to Republican party between 03-Jan-2005 and 10-Jan-2005",
+						colour			=> "blue"
 					}
 		],
 		footer		=> [
@@ -98,7 +99,8 @@ my $groups = [
 						percent			=> 82,
 						font_size		=> 12,
 						align			=> "right",
-						text			=> "Total for ?"
+						text			=> "Total for ?",
+						colour			=> "green"
 					},
 					{
 						percent			=> 18,
@@ -135,8 +137,7 @@ my $report = PDF::ReportWriter->new($report_def);
 #			when date_format(DateReceived, '%d') between 22 and 28 then 4
 #			else 5
 #		end as WeekOfMonth,
-#		date_format(DateReceived, '%W, %e %b %Y') as FullDate,
-#		1 as LotsOfOnes
+#		date_format(DateReceived, '%W, %e %b %Y') as FullDate
 #	from
 #		Cheques
 #	where
@@ -168,13 +169,6 @@ my $data = {
 				groups			=> $groups
 };
 
-my $xsimple = XML::Simple->new();
-
-print $xsimple->XMLout(
-		       $data,
-                       noattr => 1
-		      );
-
 $data->{data_array} = $records;
 
 $report->render_data($data);
@@ -182,3 +176,13 @@ $report->save;
 
 system("gpdf cheques.pdf &");
 #system("/Applications/Preview.app/Contents/MacOS/Preview cheques.pdf &");
+
+sub company_colour {
+	
+	my $company = shift;
+	
+	if ( $company =~ /Microsoft/ ) {
+		return "red";
+	}
+	
+}

@@ -20,7 +20,7 @@ use constant letter_x	=> 8.5 * in;		# x points in a letter page
 use constant letter_y	=> 11 * in;		# y points in a letter page
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.4';
+	$PDF::ReportWriter::VERSION = '0.5';
 }
 
 # Globals
@@ -60,7 +60,7 @@ sub new {
 	# Create a new PDF document
 	$self->{pdf} = PDF::API2->new;
 	
-	#Add requested fonts
+	# Add requested fonts
 	for my $font ( @{$self->{font_list}} ) {
 		# Roman fonts are easy
 		$self->{fonts}->{$font}->{Roman} = $self->{pdf}->corefont(			$font,			-encoding => 'latin1');
@@ -99,6 +99,7 @@ sub render_data {
 	
 	# Complete field definitions ...
 	# Calculate the positions of cell and text object anchors, cell and text widths, etc
+	# Clear out aggregate results - these should only total over the current rendering
 	
 	$cell_spacing = $self->{data}->{max_font_size} * .5;
 	
@@ -112,6 +113,8 @@ sub render_data {
 		$field_definition->{border_width} = ( $page_width - ( $self->{x_margin} * 2 ) ) * $field_definition->{percent} / 100;
 		$field_definition->{text_width} = $field_definition->{border_width} - $self->{data}->{max_font_size};
 		$x += $field_definition->{border_width};
+		$field_definition->{group_results} = undef;
+		$field_definition->{grand_aggregate_result} = undef;
 	}
 	
 	# Same for the group header / footer definitions
@@ -134,7 +137,7 @@ sub render_data {
 				}
 			}
 		}
-		# Set all group values to a special character so we recogcise that we are entering a new value for each of them ...
+		# Set all group values to a special character so we recognise that we are entering a new value for each of them ...
 		#  ... particularly the GrandTotal group
 		$group_definition->{value} = "!";
 	}
@@ -149,14 +152,18 @@ sub render_data {
 		
 		foreach my $group ( reverse @{$self->{data}->{groups}} ) {
 			if ($group->{value} ne $$row[$group->{data_column}]) {
-				if ( ! $no_group_footer  && scalar(@{$group->{footer}}) ) {
+				if ( ! $no_group_footer && scalar(@{$group->{footer}}) ) {
 					$self->group_footer($group);
 				}
 				# Store new group value
 				$group->{value} = $$row[$group->{data_column}];
-				# Queue headers for rendering in the data cycle ... prevents rendering a header before the last group footer is done
+				# Queue headers for rendering in the data cycle
+				# ... prevents rendering a header before the last group footer is done
 				if (scalar(@{$group->{header}})) {
-					push @group_header_queue, { group => $group, value => $$row[$group->{data_column}] };
+					push @group_header_queue, {
+									group => $group,
+									value => $$row[$group->{data_column}]
+								  };
 				}
 				$need_data_header = 1; # Remember that we need to render a data header afterwoods
 			}
@@ -175,6 +182,9 @@ sub render_data {
 		}
 	}
 	
+	# Move down some more at the end of this pass
+	$y -= $self->{data}->{max_font_size} * 1.5;
+	
 }
 
 sub new_page {
@@ -192,7 +202,6 @@ sub new_page {
 	
 	# Create a new txt object for the page
 	$txt = $page->text;
-	$txt->fillcolor("black"); # *** TODO *** colour support
 	
 	# Set y to the top of the page
 	$y = $page_height - $self->{y_margin} * 1.5;
@@ -295,95 +304,131 @@ sub render_row {
 			$line->stroke;
 		}
 		
-		# Figure out what we're putting into the current cell and set the font and size
-		# We currently default to Bold if we're doing a header
-		# We also check for an specific font for this field, or fall back on the report default
-		my $string;
-		
-		if ($type =~ /header/ ) {
-			$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Bold}, $field->{font_size} || $self->{default_font_size} );
+		if ( $field->{picture} ) {
+			
+			# *** TODO *** Support for different types of scaling?
+			my $gfx = $self->{pages}[$self->{page_count}]->gfx;
+			my $picture = $self->{pdf}->image($field->{picture});
+			
+			#my $width = $picture->width;
+			#my $height = $picture->height;
+			#
+			#my $scale_x = $field->{border_width} / $width;
+			#my $scale_y = ( $self->{data}->{max_font_size} * 1.5 ) / $height;
+			#
+			#print "Width: $width\nHeight: $height\nScale_X: $scale_x\nScale_Y: $scale_y\n\n";
+			
+			$gfx->image(
+					$picture,
+					$field->{x_border},
+					$y, $field->{border_width},
+					$self->{data}->{max_font_size} * 1.5
+				   );
+			
 		} else {
-			$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Roman}, $field->{font_size} || $self->{default_font_size } );
-		}
-		
-		if ($type eq "header") {
-			$string = $field->{name};
-		} elsif ($type eq "data") {
-			$string = $$row[$field_counter];
-		} elsif ($type eq "group_header") {
-			$string = $field->{text};
-			$string =~ s/\?/$row/g;	# In the case of a group header, the $row variable is the group value
-		} elsif ($type eq "group_footer") {
-			if (exists($field->{aggregate_source})) {
-				if ($field->{text} eq "GrandTotals") {
-					$string = $self->{data}->{fields}[$field->{aggregate_source}]->{grand_aggregate_result};
-				} else {
-					$string = $self->{data}->{fields}[$field->{aggregate_source}]->{group_results}->{$field->{text}};
-				}
+			
+			# Figure out what we're putting into the current cell and set the font and size
+			# We currently default to Bold if we're doing a header
+			# We also check for an specific font for this field, or fall back on the report default
+			my $string;
+			
+			if ($type =~ /header/ ) {
+				$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Bold}, $field->{font_size} || $self->{default_font_size} );
 			} else {
-				$string =$field->{text};
+				$txt->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Roman}, $field->{font_size} || $self->{default_font_size } );
 			}
-			$string =~ s/\?/$row/g; # In the case of a group footer, the $row variable is the group value
-		}
-		
-		# Apply type formatting ( eg currency )
-		if ( $field->{type} =~ /currency/ && $type ne "header" ) {
-			my $decimal_fill = 1;
-			if ($field->{type} eq "currency:no_fill") {
-				$decimal_fill = 0;
-			}
-			my $dollar_formatter = new Number::Format(
-									thousands_sep	=> ',',
-									decimal_point	=> '.',
-									decimal_fill	=> $decimal_fill,
-									int_curr_symbol	=> 'USD'
-								 );
-			$string = "\$" . $dollar_formatter->format_number($string);
-		}
-		
-		# Make sure the current string fits inside the current cell
-		while ($txt->advancewidth($string) > $field->{text_width}) {
-			chop($string);
-		}
-		
-		# Alignment
-		if ($field->{align} eq "centre" || $type eq "header") {
-			# Calculate the width of the string, and move to the right so there's an even gap at both sides, and render left-aligned from there
-			my $string_width = $txt->advancewidth($string);
-			my $x_offset = ( $field->{text_width} - $string_width ) / 2;
-			my $x_anchor = $field->{x_text} + $x_offset;
-			$txt->translate( $x_anchor, $y + $cell_spacing );
-			$txt->text($string);
-		} elsif ($field->{align} eq "right") {
-			$txt->translate ( $field->{x_text} + $field->{text_width}, $y + $cell_spacing );
-			$txt->text_right($string);
-		} else {
-			# Default alignment if left-aligned
-			$txt->translate( $field->{x_text}, $y + $cell_spacing );
-			$txt->text($string);
-		}
-		
-		# Now perform aggregate functions if defined
-		if ( $type eq "data" && $field->{aggregate_function} ) {
-			if ($field->{aggregate_function} eq "sum") {
-				for my $group ( @{$self->{data}->{groups}} ) {
-					$field->{group_results}->{$group->{name}} += $$row[$field_counter];
+			
+			# Set colour or default to black
+			if ($type eq "header") {
+				$txt->fillcolor( $field->{header_colour} || "black" );
+			} else {
+				if ($field->{colour_func}) {
+					$txt->fillcolor( $field->{colour_func}($$row[$field_counter]) || "black" );
+				} else {
+					$txt->fillcolor( $field->{colour} || "black" );
 				}
-				$field->{grand_aggregate_result} += $$row[$field_counter];
-			} elsif ($field->{aggregate_function} eq "count") {
-				for my $group ( @{$self->{data}->{groups}} ) {
-					$field->{group_results}->{$group->{name}} += 1;
+			}
+			
+			if ($type eq "header") {
+				$string = $field->{name};
+			} elsif ($type eq "data") {
+				$string = $$row[$field_counter];
+			} elsif ($type eq "group_header") {
+				$string = $field->{text};
+				$string =~ s/\?/$row/g;	# In the case of a group header, the $row variable is the group value
+			} elsif ($type eq "group_footer") {
+				if (exists($field->{aggregate_source})) {
+					if ($field->{text} eq "GrandTotals") {
+						$string = $self->{data}->{fields}[$field->{aggregate_source}]->{grand_aggregate_result};
+					} else {
+						$string = $self->{data}->{fields}[$field->{aggregate_source}]->{group_results}->{$field->{text}};
+					}
+				} else {
+					$string =$field->{text};
 				}
-				$field->{grand_aggregate_result} += 1;
+				$string =~ s/\?/$row/g; # In the case of a group footer, the $row variable is the group value
 			}
-		} 
-		
-		# If we have just printed a group footer, we have to reset the value to 0
-		if ( $type eq "group_footer" ) {
-			$field->{group_aggregate_result} = 0;
-			if (exists($field->{aggregate_source})) {
-				$self->{data}->{fields}[$field_counter]->{group_results}->{$field->{text}} = 0;
+			
+			# Apply type formatting ( eg currency )
+			if ( $field->{type} =~ /currency/ && $type ne "header" ) {
+				my $decimal_fill = 1;
+				if ($field->{type} eq "currency:no_fill") {
+					$decimal_fill = 0;
+				}
+				my $dollar_formatter = new Number::Format(
+										thousands_sep	=> ',',
+										decimal_point	=> '.',
+										decimal_fill	=> $decimal_fill,
+										int_curr_symbol	=> 'USD'
+									 );
+				$string = "\$" . $dollar_formatter->format_number($string);
 			}
+			
+			# Make sure the current string fits inside the current cell
+			while ($txt->advancewidth($string) > $field->{text_width}) {
+				chop($string);
+			}
+			
+			# Alignment
+			if ($field->{align} eq "centre" || $type eq "header") {
+				# Calculate the width of the string, and move to the right so there's an even gap at both sides, and render left-aligned from there
+				my $string_width = $txt->advancewidth($string);
+				my $x_offset = ( $field->{text_width} - $string_width ) / 2;
+				my $x_anchor = $field->{x_text} + $x_offset;
+				$txt->translate( $x_anchor, $y + $cell_spacing );
+				$txt->text($string);
+			} elsif ($field->{align} eq "right") {
+				$txt->translate ( $field->{x_text} + $field->{text_width}, $y + $cell_spacing );
+				$txt->text_right($string);
+			} else {
+				# Default alignment if left-aligned
+				$txt->translate( $field->{x_text}, $y + $cell_spacing );
+				$txt->text($string);
+			}
+			
+			# Now perform aggregate functions if defined
+			if ( $type eq "data" && $field->{aggregate_function} ) {
+				if ($field->{aggregate_function} eq "sum") {
+					for my $group ( @{$self->{data}->{groups}} ) {
+						$field->{group_results}->{$group->{name}} += $$row[$field_counter];
+					}
+					$field->{grand_aggregate_result} += $$row[$field_counter];
+				} elsif ($field->{aggregate_function} eq "count") {
+					for my $group ( @{$self->{data}->{groups}} ) {
+						$field->{group_results}->{$group->{name}} += 1;
+					}
+					$field->{grand_aggregate_result} += 1;
+				}
+			} 
+			
+			# If we have just printed a group footer, we have to reset the value to 0
+			if ( $type eq "group_footer" ) {
+				$field->{group_aggregate_result} = 0;
+				if (exists($field->{aggregate_source})) {
+					$self->{data}->{fields}[$field_counter]->{group_results}->{$field->{text}} = 0;
+				}
+			}
+			
 		}
 		
 		$field_counter ++;
@@ -450,10 +495,14 @@ my $group = [
       name                     => "WeekOfMonth",
       data_column              => 2,
       header                   => [
-                                                percent            => 100,
+                                                percent            => 80,
                                                 font_size          => 12,
                                                 align              => "right",
                                                 text               => "Payments for week ?"
+                                  ],
+                                  [
+                                                percent            => 20,
+                                                picture            => "/home/dan/some_logo.png"
                                   ]
       footer                   => [
                                                 percent            => 85,
@@ -547,6 +596,27 @@ The font to use. In most cases, you would set up a report-wide default_font. Onl
 =head2 font_size
 
 The font size. Nothing special here...
+
+=head2 colour
+
+The colour to use for rendering data ( and also group headers / footers )
+
+=head2 header_colour
+
+The colour to use for rendering data headers ( ie the field names )
+
+=head2 text
+
+The text to display in the field
+
+=head2 picture
+
+The full path to an image to insert ( scaled to fit the current cell )
+
+=head2 colour_func
+
+A user-defined sub that returns a colour based on the current data ( ie receives 1 argument: the current value )
+See the demo application for a working example
 
 =head2 align
 
