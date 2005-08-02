@@ -1,5 +1,26 @@
 CHANGELOG
 
+Version 0.6, released 02-Aug-2005
+    
+    Major, major rewrite. Many new features. Squashed all bugs I know of.
+    Fixed bug in resetting aggregate fields when entering a new group
+    Fixed bug in colour_func when called on non-data stuff ( eg headers, footers, etc )
+    Better comments in source, use constants for TRUE / FALSE
+    Replaced $field->{picture} with $field->{image} hash
+    Set $self->{default_font_size} to 12 if one isn't supplied
+    Renamed internal variables for more consistancy
+    Replaced $cell_spacing with dynamic calculation of $field->{text_whitespace} ( user can define own values )
+    Replaced user-defined $self->{data}->{max_font_size} with calculated value - any max_font_size value you set will be overriden
+    Added far more robust calculation of Y-space needed for current block of data
+    Keep group headings with data ( ie don't print a group header at the bottom of a page ) ... FIGJAM
+    Move down the page immediately *before* rendering each line, instead of after
+    Added image scaling ... that actually works ( added dependancy on Image::Size )
+    Added image alignment
+    Recognise "center" as well as "centre" in alignment definition
+    Get rid of warnings about unintialised variables ( 'no warnings' directive )
+    Added support for colour background setting for cells - current options are 'box' or 'ellipse'
+    Separated demo app from main package
+    
 Version 0.5, released 15-Jun-2005
     
     Added support for images - scaled to fit to the current cell ( not finalised - comments welcome )

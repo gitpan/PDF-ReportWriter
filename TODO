@@ -1,3 +1,10 @@
-- Improve font support
-- Colour support
+Things that must be done:
+
+- Add support for custom page footers, and ( possibly ) remove hard-coded page footers ( page n of m, etc )
 - Add more paper definitions ( only have A4 / letter currently )
+
+Things that could be done:
+- Cleaner handling of data ( ie field ) headers
+- Support calculating a header's row that contains an unscaled image when determining our $y_needed
+    This situation should be quite rare, and it would need a different approach
+    We'd have to do a dummy render_row pass on each header, or else break out our calculation into another function?
