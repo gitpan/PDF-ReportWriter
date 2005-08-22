@@ -26,7 +26,7 @@ use constant TRUE	=> 1;
 use constant FALSE	=> 0;
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.6';
+	$PDF::ReportWriter::VERSION = '0.7';
 }
 
 # Globals
@@ -305,10 +305,11 @@ sub group_header {
 	
 	my ( $self, $group, $value ) = @_;
 	
-	$self->render_row( $group->{header}, $group->{value}, "group_header", $group->{header_max_font_size} );
+	if ( $group->{name} ne "GrandTotals" ) {
+		$y -= $group->{header_max_font_size};
+	}
 	
-	# Move down again for to separate the header from the data ( or data header )
-	$y -= $group->{header_max_font_size};
+	$self->render_row( $group->{header}, $group->{value}, "group_header", $group->{header_max_font_size} );
 	
 }
 
@@ -410,7 +411,10 @@ sub render_row {
 	
 	if ( scalar(@group_header_queue) ) {
 		for my $header ( @group_header_queue ) {
-			$y_needed += $header->{group}->{header_max_font_size} * 1.5;
+			# We multiply by 1.5 for the standard text size
+			# Then add another 1 for the gap between the previous data and the header ...
+			#  ... see group_header() for details
+			$y_needed += $header->{group}->{header_max_font_size} * 2.5;
 		}
 		# And also the data header if it's turned on
 		if ( ! $self->{data}->{no_field_headers} ) {

@@ -1,5 +1,11 @@
 CHANGELOG
 
+Version 0.7, released 22-Aug-2005
+    
+    Move down before rendering instead of after in group_header ( and not in GrandTotals header )
+    Fixed small bug in calculation of Y-space needed for current data block
+        ( take into account whitespace between previous row and group header )
+    
 Version 0.6, released 02-Aug-2005
     
     Major, major rewrite. Many new features. Squashed all bugs I know of.
