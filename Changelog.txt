@@ -1,5 +1,20 @@
 CHANGELOG
 
+Version 0.8, released 22-Oct-2005
+    
+    Added page headers and footers, dealt with in same style as data ( ie an array of cells )
+    Added special tags %PAGE%, %PAGES%, and %TIME% for page headers and footers
+    Added cell-level control of cell borders, including colour support
+    Added legacy page footers ( default if no page footer specified )
+    Added support for setting PDF info
+    Don't create a new page in the constuctor - wait until we get passed some data
+    Added setup_cell_definitions() to generically fill out details of all different types of cells
+    Broke out calculation of Y needed into calculate_y_needed()
+    Fixed typo in paper setup ( 'portait' should be 'portrait' ) - thanks to Bill Hess for spotting this one
+    Added 'bsize' and 'legal' paper sizes - thanks to Bill Hess for these additions
+    Removed all global variables
+    Updated documentation & cleaned up POD somewhat
+    
 Version 0.7, released 22-Aug-2005
     
     Move down before rendering instead of after in group_header ( and not in GrandTotals header )

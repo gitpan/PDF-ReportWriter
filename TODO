@@ -1,6 +1,6 @@
-Things that must be done:
-
-- Add support for custom page footers, and ( possibly ) remove hard-coded page footers ( page n of m, etc )
+Things that should be done:
+- Add support for whitespace around images
+- Add support for defining paper size per page instead of per pdf ( trivial )
 - Add more paper definitions ( only have A4 / letter currently )
 
 Things that could be done:
