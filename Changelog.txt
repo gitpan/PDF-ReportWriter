@@ -1,5 +1,9 @@
 CHANGELOG
 
+Version 0.81, released 22-Oct-2005
+    
+    Fixed stoopid mistake ( missing bracket close ) in previous release
+    
 Version 0.8, released 22-Oct-2005
     
     Added page headers and footers, dealt with in same style as data ( ie an array of cells )

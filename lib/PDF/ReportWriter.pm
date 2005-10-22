@@ -34,7 +34,7 @@ use constant TRUE	=> 1;
 use constant FALSE	=> 0;
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.8';
+	$PDF::ReportWriter::VERSION = '0.81';
 }
 
 sub new {
@@ -82,6 +82,7 @@ sub new {
 			$self->{page_width} = legal_x;
 		} else {
 			die "Unsupported orientation: " . $self->{orientation} . "\n";
+		}
 	} else {
 		die "Unsupported paper format: " . $self->{paper} . "\n";
 	}
