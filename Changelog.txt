@@ -1,5 +1,25 @@
 CHANGELOG
 
+Version 0.9, released 16-Jan-2006
+    Fixed calculation of $field->{text_width} ( take into account user-defined text_whitespace )
+    Replaced max_font_size with max_cell_height - better way of handling Y-space
+    Incorporated groups into setup_cell_definitions()
+    Changed $field in setup_cell_definitions() to $cell
+    Added support for reprinting group headers on a new page
+    Fixed error in rendering final group footers if there is no footer defined. How did this happen?
+    Added support for defining Top, Bottom, Left, Right cell borders to render - thanks to Bill Hess for patch
+    Added support for splitting multiple columns of data into a group header - thanks to Bill Hess for patch
+    Added upper_buffer and lower_buffer keys to group & data definitions for defining whitespace buffers
+    Added support for page breaking before a group header
+    Reprint higher-level 'reprinting_header' group headers when a lower-level group triggers a page break
+    Broke out queuing group headers into separate assemble_group_header_queue() method
+    Removed $no_group_footer variable
+    Calculate size of group header queue, and if too big, re-assemble entire queue based on assumption that
+        we're printing on a new page ( which could pull in more group headers that are reprinting_headers )
+        - thanks for Bill Hess for tirelessly reporting this bug until I fixed it :)
+    Added support for dynamic images - image path comes from the data array
+    Updated TODO with final feature additions for a 1.0 release, and plans for 2.0
+    
 Version 0.81, released 22-Oct-2005
     
     Fixed stoopid mistake ( missing bracket close ) in previous release

@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 
-# (C) Daniel Kasak: dan@entropy.homelinux.org
+# (C) Daniel Kasak: dan@entropy.homelinux.org ...
+#  ... with patches from Bill Hess for various feature additions
+
 # See COPYRIGHT file for full license
 
 # See 'man PDF::ReportWriter' for full documentation ... or of course continue reading
@@ -34,7 +36,7 @@ use constant TRUE	=> 1;
 use constant FALSE	=> 0;
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.81';
+	$PDF::ReportWriter::VERSION = '0.9';
 }
 
 sub new {
@@ -134,13 +136,120 @@ sub new {
 	
 }
 
+sub setup_cell_definitions {
+	
+	my ( $self, $cell_array, $type, $group, $group_type ) = @_;
+	
+	my $x = $self->{x_margin};
+	
+	for my $cell ( @{$cell_array} ) {
+		
+		# The cell's left-hand border position
+		$cell->{x_border} = $x;
+		
+		# The cell's font size - user defined by cell, or from the report default
+		if ( ! $cell->{font_size} ) {
+			$cell->{font_size} = $self->{default_font_size};
+		}
+		
+		# The cell's text whitespace ( the minimum distance between the cell border and cell text )
+		# Default to half the font size if not given
+		if ( ! $cell->{text_whitespace} ) {
+			$cell->{text_whitespace} = $cell->{font_size} * 0.5;
+		}
+		
+		# The cell's height
+		$cell->{height} = $cell->{text_whitespace} + $cell->{font_size};
+		
+		# The cell's left-hand text position
+		$cell->{x_text} = $x + $cell->{text_whitespace};
+		
+		# The cell's full width ( border to border )
+		$cell->{border_width} = ( $self->{page_width} - ( $self->{x_margin} * 2 ) ) * $cell->{percent} / 100;
+		
+		# The cell's maximum width of text
+		$cell->{text_width} = $cell->{border_width} - ( $cell->{text_whitespace} * 2 );
+		
+		# We also need to set the data-level or header/footer-level max_cell_height
+		# This refers to the height of the actual cell ...
+		#  ... ie ie it doesn't include upper_buffer and lower_buffer whitespace
+		if ( $type eq "data" ) {
+			if ( $cell->{height} > $self->{data}->{max_cell_height} ) {
+				$self->{data}->{max_cell_height} = $cell->{height};
+			}
+			# Default to the data-level background if there is none defined for this cell
+			# We don't do this for page headers / footers, because I don't think this
+			# is appropriate default behaviour for these ( ie usually doesn't look good )
+			if ( ! $cell->{background} ) {
+				$cell->{background} = $self->{data}->{background};
+			}
+		} elsif ( $type eq "page_header" ) {
+			if ( $cell->{height} > $self->{data}->{page_header_max_cell_height} ) {
+				$self->{data}->{page_header_max_cell_height} = $cell->{height};
+			}
+		} elsif ( $type eq "page_footer" ) {
+			if ( $cell->{height} > $self->{data}->{page_footer_max_cell_height} ) {
+				$self->{data}->{page_footer_max_cell_height} = $cell->{height};
+			}
+		} elsif ( $type eq "group" ) {
+			
+			if ( $cell->{height} > $group->{$group_type . "_max_cell_height"} ) {
+				$group->{$group_type . "_max_cell_height"} = $cell->{height};
+			}
+			
+			# For aggregate functions, we need the name of the group, which is used later
+			# to retrieve the aggregate values ( which are stored against the group,
+			# hence the need for the group name ). However when rendering a row,
+			# we don't have access to the group *name*, so storing it in the 'text'
+			# key is a nice way around this
+			if ( $cell->{aggregate_source} ) {
+				$cell->{text} = $group->{name};
+			}
+			
+			# Initialise group aggregate results
+			$cell->{group_results}->{$group->{name}} = 0;
+			$cell->{grand_aggregate_result}->{$group->{name}} = 0;
+			
+		}
+		
+		# Move along to the next position
+		$x += $cell->{border_width};
+		
+	}
+	
+	# Set up upper_buffer and lower_buffer values on groups
+	if ( $type eq "group" ) {
+		if ( ! exists $group->{$group_type . "_upper_buffer"} ) {
+			# Default to 0 - legacy behaviour
+			$group->{$group_type . "_upper_buffer"} = 0;
+		}
+		if ( ! exists $group->{$group_type . "_lower_buffer"} ) {
+			# Default to 0 - legacy behaviour
+			$group->{$group_type . "_lower_buffer"} = 0;
+		}
+	}
+	
+	# Set up data-level upper_buffer and lower_buffer values
+	if ( $type eq "data" ) {
+		if ( ! exists $self->{data}->{upper_buffer} ) {
+			# Default to 0, which was the previous behaviour
+			$self->{data}->{upper_buffer} = 0;
+		}
+		if ( ! exists $self->{data}->{lower_buffer} ) {
+			# Default to 0, which was the previous behaviour
+			$self->{data}->{lower_buffer} = 0;
+		}
+	}
+	
+}
+
 sub render_data {
 	
 	my ( $self, $data ) = @_;
 	
 	$self->{data} = $data;
 		
-	$self->{data}->{max_font_size} = 0; # We calculate this one now
+	$self->{data}->{cell_height} = 0;
 	
 	# Complete field definitions ...
 	# ... calculate the position of each cell's borders and text positioning
@@ -165,7 +274,7 @@ sub render_data {
 		$self->setup_cell_definitions( $self->{data}->{page}->{footer}, "page_footer" );
 	} elsif ( ! $self->{data}->{page}->{footer} && ! $self->{data}->{page}->{footerless} ) {
 		# Set a default page footer if we haven't been explicitely told not to
-		$self->{data}->{page_footer_max_font_size} = 8;
+		$self->{data}->{cell_height} = 12; # Default text_whitespace of font size * .5
 		$self->{data}->{page}->{footer} = [
 							{
 								percent		=> 50,
@@ -183,83 +292,30 @@ sub render_data {
 		$self->setup_cell_definitions( $self->{data}->{page}->{footer}, "page_footer" );
 	}
 	
+	# Groups
+	for my $group ( @{$self->{data}->{groups}} ) {
+		for my $group_type ( qw / header footer / ) {
+			if ( $group->{$group_type} ) {
+				$self->setup_cell_definitions( $group->{$group_type}, "group", $group, $group_type );
+			}
+		}
+		# Set all group values to a special character so we recognise that we are entering
+		# a new value for each of them ... particularly the GrandTotal group
+		$group->{value} = "!";
+	}
+	
+	# Create an array for the group header queue ( otherwise new_page() won't work so well )
+	$self->{group_header_queue} = [];
+	
 	# Calculate the y space needed for page footers
 	my $size_calculation = $self->calculate_y_needed(
 								{
 									fields		=> $self->{data}->{page}->{footer},
-									max_font_size	=> $self->{data}->{page_footer_max_font_size}
+									max_cell_height	=> $self->{data}->{page_footer_max_cell_height}
 								}
 							);
 	
 	$self->{page_footer_and_margin} = $size_calculation->{current_height} + $self->{y_margin};
-	
-	# Same process for the group header / footer definitions, but there is some group-specific
-	# stuff, so we process them separately to the above
-	for my $group ( @{$self->{data}->{groups}} ) {
-		
-		for my $group_type ( qw / header footer / ) {
-			
-			my $x = $self->{x_margin};
-			
-			# Reset group's max_font_size setting
-			$group->{$group_type . "_max_font_size"} = 0;
-			
-			for my $field ( @{$group->{$group_type}} ) {
-				
-				# The cell's left-hand border position
-				$field->{x_border} = $x;
-				
-				# The cell's font size - user defined by cell, or from the report default
-				if ( ! $field->{font_size} ) {
-					$field->{font_size} = $self->{default_font_size};
-				}
-				
-				# We also need to set the max_font_size
-				if ( $field->{font_size} > $group->{$group_type . "_max_font_size"} ) {
-					$group->{$group_type . "_max_font_size"} = $field->{font_size};
-				}
-				
-				# The cell's text whitespace ( the minimum distance between the x_border and cell text )
-				# Default to half the font size if not given
-				if ( ! $field->{text_whitespace} ) {
-					$field->{text_whitespace} = $field->{font_size} * 0.5;
-				}
-				
-				# The cell's left-hand text position
-				$field->{x_text} = $x + $field->{text_whitespace};
-				
-				# The cell's full width ( border to border )
-				$field->{border_width} = ( $self->{page_width} - ( $self->{x_margin} * 2 ) ) * $field->{percent} / 100;
-				
-				# The cell's maximum width of text
-				$field->{text_width} = $field->{border_width} - $field->{font_size};
-				
-				# Move along to the next position
-				$x += $field->{border_width};
-				
-				# For aggregate functions, we need the name of the group, which is used later
-				# to retrieve the aggregate values ( which are stored against the group,
-				# hence the need for the group name ). However when rendering a row,
-				# we don't have access to the group *name*, so storing it in the 'text'
-				# key is a nice way around this
-				
-				if ( $field->{aggregate_source} ) {
-					$field->{text} = $group->{name};
-				}
-				
-				# Initialise group aggregate results
-				$field->{group_results}->{$group->{name}} = 0;
-				$field->{grand_aggregate_result}->{$group->{name}} = 0;
-				
-			}
-			
-		}
-		
-		# Set all group values to a special character so we recognise that we are entering
-		# a new value for each of them ... particularly the GrandTotal group
-		$group->{value} = "!";
-		
-	}
 	
 	# Create a new page if we have none ( ie at the start of the report )
 	if ( ! $self->{page} ) {
@@ -268,7 +324,7 @@ sub render_data {
 	
 	$self->{txt}->fillcolor("black");
 	
-	my $no_group_footer = TRUE; # We don't want a group footer on the first run
+	my $row_counter = 0;
 	
 	# Main loop
 	for my $row ( @{$self->{data}->{data_array}} ) {
@@ -276,101 +332,124 @@ sub render_data {
 		# Check if we're entering a new group
 		$self->{need_data_header} = FALSE;
 		
-		foreach my $group ( reverse @{$self->{data}->{groups}} ) {
-			if ( $group->{value} ne $$row[$group->{data_column}] ) {
-				if ( ! $no_group_footer && scalar(@{$group->{footer}}) ) {
-					$self->group_footer($group);
-				}
-				# Store new group value
-				$group->{value} = $$row[$group->{data_column}];
-				# Queue headers for rendering in the data cycle
-				# ... prevents rendering a header before the last group footer is done
-				if (scalar(@{$group->{header}})) {
-					push
-						@{$self->{group_header_queue}},
-						{
-							group => $group,
-							value => $$row[$group->{data_column}]
-						};
-				}
-				$self->{need_data_header} = TRUE; # Remember that we need to render a data header afterwoods
+		# Assemble the Group Header queue ... firstly assuming we *don't* require
+		# a page break due to a lack of remaining paper. assemble_group_header_queue()
+		# returns whether any of the new groups encounted have requested a page break
+		
+		my $want_new_page = $self->assemble_group_header_queue(
+									$row,
+									$row_counter,
+									FALSE
+								      );
+		
+		if ( ! $want_new_page ) {
+			
+			# If none of the groups specifically requested a page break, check
+			# whether everything will fit on the page
+			
+			my $size_calculation = $self->calculate_y_needed(
+										{
+											fields		=> $self->{data}->{fields},
+											max_cell_height	=> $self->{data}->{max_cell_height},
+											row		=> $row
+										}
+									);
+			
+			if ( $self->{y} - ( $size_calculation->{y_needed} + $self->{page_footer_and_margin} ) < 0 ) {
+				
+				# Our 1st set of queued headers & 1 row of data spills over the page.
+				# We need to re-create the group header queue, and force $want_new_page
+				# so that assemble_group_header_queue() knows this and adds all headers
+				# that we need
+				$self->{group_header_queue} = undef;
+				
+				$want_new_page = $self->assemble_group_header_queue(
+											$row,
+											$row_counter,
+											TRUE
+										   );
+				
 			}
+			
 		}
 		
-		$self->render_row( $self->{data}->{fields}, $row, "data", $self->{data}->{max_font_size} );
+		# We're using $row_counter here to detect whether we've actually printed
+		# any data yet or not - we don't want to page break on the 1st page ...
+		if ( $want_new_page && $row_counter ) {
+			$self->new_page;
+		}
 		
-		$no_group_footer = FALSE; # Turn group footers on
+		$self->render_row(
+					$self->{data}->{fields},
+					$row,
+					"data",
+					$self->{data}->{max_cell_height},
+					$self->{data}->{upper_buffer},
+					$self->{data}->{lower_buffer}
+				 );
+		
+		$row_counter ++;
 		
 	}
 	
 	# The final group footers will not have been triggered ( only happens when we get a *new* group ), so we do them now
 	foreach my $group ( reverse @{$self->{data}->{groups}} ) {
-		if (scalar(@{$group->{footer}})) {
+		if ( $group->{footer} ) {
 			$self->group_footer($group);
 		}
 	}
 	
 	# Move down some more at the end of this pass
-	$self->{y} -= $self->{data}->{max_font_size} * 1.5;
+	$self->{y} -= $self->{data}->{max_cell_height};
 	
 }
 
-sub setup_cell_definitions {
+sub assemble_group_header_queue {
 	
-	my ( $self, $field_array, $type ) = @_;
+	my ( $self, $row, $row_counter, $want_new_page ) = @_;
 	
-	my $x = $self->{x_margin};
-	
-	for my $field ( @{$field_array} ) {
+	foreach my $group ( reverse @{$self->{data}->{groups}} ) {
 		
-		# The cell's left-hand border position
-		$field->{x_border} = $x;
+		# If we've entered a new group value, OR
+		#   - $want_new_page is already set - by a lower-level group
+		#   - this group has been set as a 'reprinting_header' and
 		
-		# The cell's font size - user defined by cell, or from the report default
-		if ( ! $field->{font_size} ) {
-			$field->{font_size} = $self->{default_font_size};
+		if ( ( $group->{value} ne $$row[$group->{data_column}] ) ||
+			( $want_new_page && $group->{reprinting_header} )
+		   ) {
+			
+			# Remember to page break if we've been told to
+			if ( $group->{page_break} ) {
+				$want_new_page = TRUE;
+			}
+			
+			# Only do a group footer if we have a ( non-zero ) value in $row_counter ...
+			#  ... ie if we've rendered at least 1 row of data so far
+			if ( $row_counter && $group->{footer} ) {
+				$self->group_footer($group);
+			}
+			
+			# Store new group value
+			$group->{value} = $$row[$group->{data_column}];
+			
+			# Queue headers for rendering in the data cycle
+			# ... prevents rendering a header before the last group footer is done
+			if ( $group->{header} ) {
+				push
+					@{$self->{group_header_queue}},
+					{
+						group => $group,
+						value => $$row[$group->{data_column}]
+					};
+			}
+			
+			$self->{need_data_header} = TRUE; # Remember that we need to render a data header afterwoods
+			
 		}
-		
-		# The cell's text whitespace ( the minimum distance between the x_border and cell text )
-		# Default to half the font size if not given
-		if ( ! $field->{text_whitespace} ) {
-			$field->{text_whitespace} = $field->{font_size} * 0.5;
-		}
-		
-		# The cell's left-hand text position
-		$field->{x_text} = $x + $field->{text_whitespace};
-		
-		# The cell's full width ( border to border )
-		$field->{border_width} = ( $self->{page_width} - ( $self->{x_margin} * 2 ) ) * $field->{percent} / 100;
-		
-		# The cell's maximum width of text
-		$field->{text_width} = $field->{border_width} - $field->{font_size};
-		
-		# We also need to set the max_font_size, but make sure we put it in the right place
-		if ( $type eq "data" ) {
-			if ( $field->{font_size} > $self->{data}->{max_font_size} ) {
-				$self->{data}->{max_font_size} = $field->{font_size};
-			}
-			# Default to the data-level background if there is none defined for this cell
-			# We don't do this for page headers / footers, because I don't think this
-			# is appropriate default behaviour for these ( ie usually doesn't look good )
-			if ( ! $field->{background} ) {
-				$field->{background} = $self->{data}->{background};
-			}
-		} elsif ( $type eq "page_header" ) {
-			if ( $field->{font_size} > $self->{data}->{page_header_max_font_size} ) {
-				$self->{data}->{page_header_max_font_size} = $field->{font_size};
-			}
-		} elsif ( $type eq "page_footer" ) {
-			if ( $field->{font_size} > $self->{data}->{page_footer_max_font_size} ) {
-				$self->{data}->{page_footer_max_font_size} = $field->{font_size};
-			}
-		}
-		
-		# Move along to the next position
-		$x += $field->{border_width};
 		
 	}
+	
+	return $want_new_page;
 	
 }
 
@@ -401,7 +480,7 @@ sub new_page {
 	#  ... otherwise it won't be the background - it will be the foreground!
 	$self->{shape} = $page->gfx(1);
 	
-	# Append out page footer definition to an array - we store one per page, and render
+	# Append our page footer definition to an array - we store one per page, and render
 	# them immediately prior to saving the PDF, so we can say "Page n of m" etc
 	push @{$self->{page_footers}}, $self->{data}->{page}->{footer};
 	
@@ -410,7 +489,27 @@ sub new_page {
 	       
 	# Render page header if defined
 	if ( $self->{data}->{page}->{header} ) {
-		$self->render_row( $self->{data}->{page}->{header}, undef, "page_header", $self->{data}->{page_header_max_font_size} );
+		$self->render_row(
+					$self->{data}->{page}->{header},
+					undef,
+					"page_header",
+					$self->{data}->{page_header_max_cell_height},
+					0, # Page headers don't need
+					0  # upper / lower buffers
+				 );
+	}
+	
+	# Renderer any group headers that have been set as 'reprinting_header'
+	# ( but not if the group has the special value ! which means that we haven't started yet,
+	# and also not if we've got group headers already queued )
+	for my $group ( @{$self->{data}->{groups}} ) {
+		# *** TODO *** We're getting NULL values in $self->{group_header_queue}
+		# Is this important? Also, why were we using the test below, when the replacement
+		# works just as well?
+#		if ( ( ! scalar @{$self->{group_header_queue}} ) && ( $group->{reprinting_header} ) && ( $group->{value} ne "!" ) ) {
+		if ( ( ! $self->{group_header_queue} ) && ( $group->{reprinting_header} ) && ( $group->{value} ne "!" ) ) {
+			$self->group_header( $group );
+		}
 	}
 	
 }
@@ -419,13 +518,22 @@ sub group_header {
 	
 	# Renders a new group header
 	
-	my ( $self, $group, $value ) = @_;
+	my ( $self, $group ) = @_;
 	
 	if ( $group->{name} ne "GrandTotals" ) {
-		$self->{y} -= $group->{header_max_font_size};
+		$self->{y} -= $group->{header_upper_buffer};
 	}
 	
-	$self->render_row( $group->{header}, $group->{value}, "group_header", $group->{header_max_font_size} );
+	$self->render_row(
+				$group->{header},
+				$group->{value},
+				"group_header",
+				$group->{header_max_cell_height},
+				$group->{header_upper_buffer},
+				$group->{header_lower_buffer}
+			 );
+	
+	$self->{y} -= $group->{header_lower_buffer};
 	
 }
 
@@ -435,13 +543,23 @@ sub group_footer {
 	
 	my ( $self, $group ) = @_;
 	
-	my $y_needed = $self->{page_footer_and_margin} + $group->{footer_max_font_size};
+	my $y_needed = $self->{page_footer_and_margin}
+		+ $group->{footer_max_cell_height}
+		+ $group->{footer_upper_buffer}
+		+ $group->{footer_lower_buffer};
 	
 	if ($self->{y} - $y_needed < 0) {
 		$self->new_page;
 	}
 	
-	$self->render_row( $group->{footer}, $group->{value}, "group_footer", $group->{footer_max_font_size} );
+	$self->render_row(
+				$group->{footer},
+				$group->{value},
+				"group_footer",
+				$group->{footer_max_cell_height},
+				$group->{footer_upper_buffer},
+				$group->{footer_lower_buffer}
+			 );
 	
 	# Reset group totals
 	for my $field ( @{ $self->{data}->{fields} } ) {
@@ -456,11 +574,11 @@ sub calculate_y_needed {
 	
 	# Unpack options hash
 	my $fields		= $options->{fields};
-	my $max_font_size	= $options->{max_font_size};
+	my $max_cell_height	= $options->{max_cell_height};
 	
-	# For text, we allocate 1.5 times the font size,
-	# so start with this value as the minimum $current_height
-	my $current_height	= $max_font_size * 1.5;
+	# We've just been passed the max_cell_height
+	# This will be all we need if we are only rendering text
+	my $current_height	= $max_cell_height;
 	
 	my ( $img_x, $img_y, $img_type );
 	my $scale_ratio = 1; # Default is no scaling
@@ -470,16 +588,37 @@ sub calculate_y_needed {
 	# Images can take up the full cell
 	
 	# *** TODO *** implement something similar ( or identical )
-	# to $field->{textwhitespace} so images can have a whitespace border
+	# to $field->{text_whitespace} so images can have a whitespace border
+	
+	my $counter = 0;
 	
 	for my $field ( @{$options->{fields}} ) {
 		
 		if ( $field->{image} ) {
 			
+			# Support dynamic images ( image path comes from data array )
+			# Note: $options->{row} won't necessarily be a data array ...
+			#  ... it will ONLY be an array if we're rendering a row of data
+			
+			if ( $field->{image}->{dynamic} && ref $options->{row} eq "ARRAY" ) {
+				$field->{image}->{path} = $options->{row}[$counter];
+			}
+			
 			my $y_scale_ratio;
 			
 			# *** TODO *** support use of images in memory instead of from files?
 			( $img_x, $img_y, $img_type ) = imgsize( $field->{image}->{path} );
+			
+			# Deal with problems with image
+			if ( ! $img_x ) {
+				warn "Image $field->{image}->{path} had zero width ... setting to 1\n";
+				$img_x = 1;
+			}
+			
+			if ( ! $img_y ) {
+				warn "Image $field->{image}->{path} had zero height ... setting to 1\n";
+				$img_y = 1;
+			}
 			
 			if ( $field->{image}->{height} ) {
 				# The user has defined an image height
@@ -512,14 +651,16 @@ sub calculate_y_needed {
 			
 		}
 		
+		$counter ++;
+		
 	}
 	
 	# If we have queued group headers, calculate how much Y space they need
 	
 	# Note that at this point, $current_height is the height of the current row
-	# We now introduce $y_needed, which is $current_height, PLUS the height of headers etc
+	# We now introduce $y_needed, which is $current_height, PLUS the height of headers, buffers, etc
 	
-	my $y_needed = $current_height;
+	my $y_needed = $current_height + $self->{data}->{upper_buffer} + $self->{data}->{lower_buffer};
 	
 	# *** TODO *** this will not work if there are *unscaled* images in the headers
 	# Is it worth supporting this as well? Maybe.
@@ -527,14 +668,15 @@ sub calculate_y_needed {
 	
 	if ( $self->{group_header_queue} ) {
 		for my $header ( @{$self->{group_header_queue}} ) {
-			# We multiply by 1.5 for the standard text size
-			# Then add another 1 for the gap between the previous data and the header ...
-			#  ... see group_header() for details
-			$y_needed += $header->{group}->{header_max_font_size} * 2.5;
+			# For the headers, we take the header's max_cell_height,
+			# then add the upper & lower buffers for the group header			
+			$y_needed += $header->{group}->{header_max_cell_height}
+				+ $header->{group}->{header_upper_buffer}
+				+ $header->{group}->{header_lower_buffer};
 		}
 		# And also the data header if it's turned on
 		if ( ! $self->{data}->{no_field_headers} ) {
-			$y_needed += $max_font_size * 1.5;
+			$y_needed += $max_cell_height;
 		}
 	}
 	
@@ -552,7 +694,7 @@ sub calculate_y_needed {
 
 sub render_row {
 	
-	my ( $self, $fields, $row, $type, $max_font_size ) = @_;
+	my ( $self, $fields, $row, $type, $max_cell_height, $upper_buffer, $lower_buffer ) = @_;
 	
 	# $fields	- a hash of field definitions
 	# $row		- the current row to render
@@ -563,6 +705,9 @@ sub render_row {
 	#			- group_footer		- prints a row of group footer
 	#			- page_header		- prints a page header
 	#			- page_footer		- prints a page footer
+	# $max_cell_height - the height of the *cell* ( not including buffers )
+	# upper_buffer	- amount of whitespace to leave above this row
+	# lower_buffer	- amount of whitespace to leave after this row
 	
 	# In the case of page footers, $row will be a hash with useful stuff like
 	# page number, total pages, time, etc
@@ -571,7 +716,8 @@ sub render_row {
 	my $size_calculation = $self->calculate_y_needed(
 								{
 									fields		=> $fields,
-									max_font_size	=> $max_font_size
+									max_cell_height	=> $max_cell_height,
+									row		=> $row
 								}
 							);
 	
@@ -585,6 +731,7 @@ sub render_row {
 	
 	# Page Footer / New Page / Page Header if necessary, otherwise move down by $current_height
 	# ( But don't force a new page if we're rendering a page footer )
+	
 	if ( $type ne "page_footer" && $self->{y} - ( $y_needed + $self->{page_footer_and_margin} ) < 0 ) {
 		$self->new_page;
 	}
@@ -597,10 +744,18 @@ sub render_row {
 	}
 	
 	if ( $type eq "data" && $self->{need_data_header} && !$self->{data}->{no_field_headers} ) {
-		$self->render_row( $fields, 0, "header", $self->{data}->{max_font_size} );
+		$self->render_row(
+					$fields,
+					0,
+					"header",
+					$self->{data}->{max_cell_height},
+					$self->{data}->{upper_buffer}, # At the moment, we re-use
+					$self->{data}->{lower_buffer}  # the standard data buffers
+				 );
 	}
 	
-	$self->{y} -= $current_height;
+	# Move down for upper_buffer, and then for the current row height
+	$self->{y} -= $upper_buffer + $current_height;
 	
 	# Render row
 	my $field_counter = 0;
@@ -667,20 +822,55 @@ sub render_row {
 			
 			# Cell Borders
 			$self->{line}->strokecolor( $field->{background}->{border} );
-			$self->{line}->move( $field->{x_border}, $self->{y} );
-			$self->{line}->line( $field->{x_border} + $field->{border_width}, $self->{y} );
-			$self->{line}->line( $field->{x_border} + $field->{border_width}, $self->{y} + $current_height );
-			$self->{line}->line( $field->{x_border}, $self->{y} + $current_height );
-			$self->{line}->line( $field->{x_border}, $self->{y} );
-			$self->{line}->stroke;
-				
+                        
+                        # If the 'borders' key does not exist then draw all borders
+                        # to support code written before this was added.
+                        # A value of 'all' can also be used.
+                        if( ( ! exists $field->{background}->{borders} ) || ( $field->{background}->{borders} =~ /^all$/i ) ) {
+				$field->{background}->{borders} = "tblr";
+                        }
+                        
+			# The 'borders' key looks for the following chars in the string
+			#  t or T - Top Border Line
+			#  b or B - Bottom Border Line
+			#  l or L - Left Border Line
+			#  r or R - Right Border Line
+			
+			# Bottom Horz Line
+			if( $field->{background}->{borders} =~ /b|B/ ) {
+				$self->{line}->move( $field->{x_border}, $self->{y} );
+				$self->{line}->line( $field->{x_border} + $field->{border_width}, $self->{y} );
+				$self->{line}->stroke;
+			}
+
+			# Right Vert Line
+			if( $field->{background}->{borders} =~ /r|R/ ) {
+				$self->{line}->move( $field->{x_border} + $field->{border_width}, $self->{y} );
+				$self->{line}->line( $field->{x_border} + $field->{border_width}, $self->{y} + $current_height );
+				$self->{line}->stroke;
+			}
+			
+			# Top Horz Line
+			if( $field->{background}->{borders} =~ /t|T/ ) {
+				$self->{line}->move( $field->{x_border} + $field->{border_width}, $self->{y} + $current_height );
+				$self->{line}->line( $field->{x_border}, $self->{y} + $current_height );
+				$self->{line}->stroke;
+			}
+			
+			# Left Vert Line
+			if( $field->{background}->{borders} =~ /l|L/ ) {
+				$self->{line}->move( $field->{x_border}, $self->{y} + $current_height );
+				$self->{line}->line( $field->{x_border}, $self->{y} );
+				$self->{line}->stroke;
+			}
+			
 		}
 		
 		# That's cell borders / backgrounds done
 		
 		# Now for the actual contents of the cell ...
 		
-		if ( $field->{image} ) {
+		if ( $field->{image} && $type ne "header" ) {
 			
 			# *** TODO *** support use of images in memory instead of from files?
 			my $gfx = $self->{pages}[ scalar@{$self->{pages}} - 1 ]->gfx;
@@ -734,7 +924,17 @@ sub render_row {
 				$string = $$row[$field_counter];
 			} elsif ( $type eq "group_header" ) {
 				$string = $field->{text};
-				$string =~ s/\?/$row/g;	# In the case of a group header, the $row variable is the group value
+				if( $field->{delimiter} ) {
+                                   # This assumes the delim is a non-alpha char like |,~,!, etc...
+                                   my $delim = "\\" . $field->{delimiter}; 
+                                   my $row2 = (split /$delim/, $row)[$field->{index}];
+                                   $string =~ s/\?/$row2/g;
+                                }
+                                else {
+                                   # In the case of a group header, the $row variable is the group value
+                                   $string = $field->{text};
+                                   $string =~ s/\?/$row/g;
+                                }
 			} elsif ( $type eq "group_footer" ) {
 				if ( exists($field->{aggregate_source}) ) {
 					if ($field->{text} eq "GrandTotals") {
@@ -809,29 +1009,32 @@ sub render_row {
 			# Now perform aggregate functions if defined
 			if ( $type eq "data" && $field->{aggregate_function} ) {
 				if ($field->{aggregate_function} eq "sum") {
-					
 					for my $group ( @{$self->{data}->{groups}} ) {
 						$field->{group_results}->{$group->{name}} += $$row[$field_counter] || 0;
 					}
-					
 					$field->{grand_aggregate_result} += $$row[$field_counter] || 0;
-					
 				} elsif ($field->{aggregate_function} eq "count") {
-					
 					for my $group ( @{$self->{data}->{groups}} ) {
 						$field->{group_results}->{$group->{name}} += 1;
 					}
-					
 					$field->{grand_aggregate_result} += 1;
-					
 				}
-			} 
-			
+			} elsif ( $type eq "data" && $field->{custom_function} ) {
+				# TODO: Custom function support.
+				# We need to pass:
+				# - the current value
+				# - the current aggregate result,
+				# - the current grand result
+				# Do we then allow the custom function to adjust these values?
+			}
 		}
 		
 		$field_counter ++;
 		
 	}
+	
+	# Move down for the lower_buffer
+	$self->{y} -= $lower_buffer;
 	
 }
 
@@ -852,7 +1055,7 @@ sub save {
 		my $size_calculation = $self->calculate_y_needed(
 									{
 										fields		=> $self->{page_footers}[$this_page_no],
-										max_font_size	=> $self->{page_footer_max_font_size}
+										max_cell_height	=> $self->{page_footer_max_cell_height}
 									}
 								);
 		
@@ -866,7 +1069,9 @@ sub save {
 						current_time	=> $localtime
 					},
 					"page_footer",
-					$self->{page_footer_max_font_size}
+					$self->{page_footer_max_cell_height},
+					0,
+					0
 				 );
 		
 	}
@@ -1110,7 +1315,7 @@ The font size. Nothing special here...
 
 =over 4
 
-The colour to use for rendering data ( and also group headers / footers ).
+No surprises here either.
 
 =back
 
@@ -1158,8 +1363,8 @@ Possible values are "left", "right" and "centre" ( or now "center", also ).
 
 =over 4
 
-Possible values are "sum" and "count". Setting this attribute will make PDF::ReportWriter carry out the selected function
-and store the results ( attached to the cell ) for later use in group footers.
+Possible values are "sum" and "count". Setting this attribute will make PDF::ReportWriter carry
+out the selected function and store the results ( attached to the cell ) for later use in group footers.
 
 =back
 
@@ -1194,8 +1399,17 @@ The images hash has the following keys:
 
 =over 4
 
-The full path to the image to render ( currently only supports png and jpg )
-This key is the only required one
+The full path to the image to render ( currently only supports png and jpg ).
+You should either set the path, or set the 'dynamic' flag, below.
+
+=back
+
+=head2 dynamic
+
+=over 4
+
+A boolean flag to indicate that the full path to the image to use will be in the data array.
+You should either set a hard-coded image path ( above ), or set this flag on.
 
 =back
 
@@ -1254,9 +1468,42 @@ The colour ( if any ) to use to render the cell's border. If this is set, the bo
 around the very outside of the cell. You can have a shaped background and a border rendererd in the
 same cell.
 
+=over 4
+
+=head2 borders
+
+If you have set the border key ( above ), you can also define which borders to render by setting
+the borders key with the 1st letter(s) of the border to render, from the possible list of:
+
+ l   ( left border )
+ r   ( right border )
+ t   ( top border )
+ b   ( bottom border )
+ all ( all borders ) - this is also the default if no 'borders' key is encountered
+
+eg you would set borders = "tlr" to have all borders except the bottom ( b ) border
+
+Upper-case letters will also work.
+
+=back
+
 =back
 
 =head1 GROUP DEFINITIONS
+
+Grouping is achieved by defining a column in the data array to use as a group value. When a new group
+value is encountered, a group footer ( if defined ) is rendered, and a new group header ( if defined )
+is rendered. At present, the simple group aggregate functions 'count' and 'sum' are supported - see the
+cell definition section for details on how to chose a column to perform aggregate functions on, and below
+for how to retrieve the aggregate value in a footer. You can perform one aggregate function on each column
+in your data array.
+
+As of version 0.9, support has been added for splitting data from a single field ( ie the group value
+from the data_column above ) into multiple cells. To do this, simply pack your data into the column
+identified by data_column, and separate the fields with a delimiter. Then in your group definition,
+set up the cells with the special keys 'delimiter' and 'index' ( see below ) to identify how to
+delimit the data, and which column to use for the cell once the data is split. Many thanks to
+Bill Hess for this patch :)
 
 Groups have the following attributes:
 
@@ -1279,6 +1526,24 @@ The data_column refers to the column ( starting at 0 ) of the data_array that yo
 
 =back
 
+=head2 reprinting_header
+
+=over 4
+
+If this is set, the group header will be reprinted on each new page
+
+=back
+
+=head2 header_upper_buffer / header_lower_buffer / footer_upper_buffer / footer_lower_buffer
+
+=over 4
+
+These 4 keys set the respective buffers ( ie whitespace ) that separates the group
+headers / footers from things above ( upper ) and below ( lower ) them. If you don't specify any
+buffers, default values will be set to emulate legacy behaviour.
+
+=back
+
 =head2 header / footer
 
 =over 4
@@ -1288,13 +1553,30 @@ The difference is that the cell definition is contained in the 'header' and 'foo
 footer hashes resemble a field hash. Consequently, most attributes that work for field cells also work for
 group cells. Additional attributes in the header and footer hashes are:
 
-=back
-
-=head2 aggregate_source
+=head2 aggregate_source ( footers only )
 
 =over 4
 
-This is used to retrieve the results of an aggregate_function ( see above ).
+This is used to indicate which column to retrieve the results of an aggregate_function from
+( see cell definition section ).
+
+=back
+
+=head2 delimiter ( headers only )
+
+=over 4
+
+This optional key is used in conjunction with the 'index' key ( below ) and defines the
+delimiter character used to separate 'fields' in a single column of data.
+
+=back
+
+=head2 index ( headers only )
+
+=over 4
+
+This option key is used inconjunction with the 'delimiter' key ( above ), and defines the
+'column' inside the delimited data column to use for the current cell.
 
 =back
 
@@ -1383,9 +1665,9 @@ The amount of space ( top and bottom ) to leave as a margin for the report.
 =head1 DATA DEFINITION
 
 The data definition wraps up most of the previous definitions, apart from the report definition.
-My goal ( with a future release ) is to support unlimited 'sections', which you'll be able to achieve
-by passing new data definitions and calling the 'render' method. Currently this does not work, but
-should not take too much to get it going.
+You can now safely replace the entire data definition after a render() operation, allowing you
+to define different 'sections' of a report. After replacing the data definition, you simply
+render() with a new data array.
 
 Attributes for the data definition:
 
@@ -1395,10 +1677,18 @@ Attributes for the data definition:
 
 Whether to render cell borders or not. This is a legacy option - not that there's any
 pressing need to remove it - but this is a precursor to background->{border} support,
-which can be defined per-cell.
+which can be defined per-cell. Setting cell_borders in the data definition will cause
+all data cells to be filled out with: background->{border} set to grey.
 
-Setting cell_borders in the data definition will cause all data cells to be filled out
-with: background->{border} = "grey"
+=back
+
+=head2 upper_buffer / lower_buffer
+
+=over 4
+
+These 2 keys set the respective buffers ( ie whitespace ) that separates each row of data
+from things above ( upper ) and below ( lower ) them. If you don't specify any
+buffers, default values of zero will be set to emulate legacy behaviour.
 
 =back
 
@@ -1522,6 +1812,27 @@ Dan <dan@entropy.homelinux.org>
 =over 4
 
 I think you must be mistaken.
+
+=back
+
+=head1 ISSUES
+
+=over 4
+
+Unfortunately, printing PDFs via open-source tools sucks big-time.
+Much to my horror, I've uncovered multiple bugs in whatever open-source tool I use to
+view & print the output of PDF::ReportWriter. I've tried gpdf, xpdf, kpdf, evince, poppler.
+The output *looks* correct when you view it, but formatting is messed up badly when printed.
+
+I've filed bug reports. I've waited. I've filed more bug reports. I've waited more.
+Buggy bloody open-source software ... :)
+
+I suggest that if you too want to view AND print PDFs under Linux, that you use Acrobat's
+free ( as in beer ) reader. It just works ... apart from the fact that it doesn't provide
+you with any options when printing. To get around this, use either kprinter ( kde app ) or
+gtklp ( gtk app ). In acroread's print dialog, it will have /usr/bin/lp as the print command.
+Change this to your selected print tool, and you'll get a more friendly printer options dialog,
+where you can do cool things like select a printer :)
 
 =back
 

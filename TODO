@@ -1,10 +1,58 @@
+Things to do for 1.x:
+
+- Allow user-defined functions to draw directly to the PDF::API2 page
+    - pass cell co-ordinates & data ( row or cell data ? )to the function
+    - return value?
+    
+- More buffer options
+    - horizontal buffers between cells
+    - image buffers ( whitespace between image and cell borders )
+
+- Cleaner handling of data ( ie field ) headers
+    We *NEED* do add a field header definition instead of hanging off the data definition
+    This is particularly needed for cooler things like rendering images in the field headers
+
+- GrandTotals group definition needs work
+    For now, automatically set data_column
+    
+Things to do for 2.x:
+
+- XML report definitions
+    I've already had 1 failed attempt at this.
+    Who knows how to handle XML from Perl? Not me, that's for sure :)
+    Should we support 1.x report definitions?
+    If not, we should at *least* provide an upgrade path, like a
+    report definition ==> XML function.
+    
+- Perl Gtk2 - based report builder
+    How hard would this be, really?
+    It would be nice if we could get the XML stuff above working as well,
+    but I suppose if we can't, we can always just dump perl data structures to a
+    report definition file, and then load then up when running a report. I'd prefer
+    to use XML though.
+    
+
 Things that should be done:
-- Add support for whitespace around images
-- Add support for defining paper size per page instead of per pdf ( trivial )
-- Add more paper definitions ( only have A4 / letter currently )
+
+- Add more paper definitions
+
+
 
 Things that could be done:
-- Cleaner handling of data ( ie field ) headers
+
 - Support calculating a header's row that contains an unscaled image when determining our $y_needed
     This situation should be quite rare, and it would need a different approach
-    We'd have to do a dummy render_row pass on each header, or else break out our calculation into another function?
+    We'd have to do a dummy render_row pass on each header, or else break out our calculation into
+    another function?
+    NEWSFLASH: We may have already fixed this bug!
+    Check by actually putting unscaled images in a header, and see what happens.
+
+- Add support for custom aggregate functions
+    This was previously requested, but I'm having difficulty actually coming up with a use.
+    If someone gives me an example of a custom function they might want to make use of, I'll
+    consider how I'm going to hook things up
+    
+- Add support for defining paper size per *render* operation instead of per pdf
+    This could be a little tricky with page footers, which are processed after the rest of the
+    report is rendered. Does anyone actually want this functionality? Personally I have no reason,
+    but I've added it as a possibility anyway
