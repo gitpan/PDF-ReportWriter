@@ -1,14 +1,47 @@
 CHANGELOG
 
+Version 1.0, released 11-Mar-2006
+    Patches from Cosimo Streppone:
+        Added rendering of absolute-positioned cells with x,y properties.
+        Added rendering of barcodes of type 39 and 128.
+        Added support for PDF template pages.
+        Some refactoring of code at the cell/row rendering level.
+        Added basic testing of module.
+        Various optimisations.
+        Documentation updates.
+    Many thanks Cosimo for the above work :)
+    
+    Added 'thousands_separated' type - similar to currency type, but no dollar sign in front
+    Added 'buffer' key to image definition - minimum whitespace around an image ( defaults to 1 )
+    Changed $cell->{border_width} to $cell->{full_width}. 'border_width' is a very bad description ...
+    Added field_headers object and cleaned up mess of code that previously existed to deal with headers
+    Code cleanup: renamed remaining $field variables to $cell
+    Added warnings on image issues:
+        - Can't detect image dimensions ( including image not found )
+        - Unknown image type
+    Added 'bold' key to cell definition ( and support legacy behaviour )
+    Store temporary image metadata inside cell's image hash instead of passing it round
+        This adds support for rendering > 1 image per row :)
+    Automatically set the data_column for the GrandTotals group so you don't need to specify it
+    Optimisation: Cache image data ( dimensions, type ) in the image hash
+    Added support for custom rendering functions ( ie direct use of PDF::API2 ) for each cell
+        *Please* consider submitting useful functions for inclusion into PDF::ReportWriter :)
+    Fixed initial rendering of field headers if there are no groups defined
+    Fixed bad calling of calculate_y_needed ( changed 'fields' key to 'cells' in options hash )
+    Fixed error on multiple render() invocations with images ( cache being destroyed )
+    
 Version 0.9, released 16-Jan-2006
+    Patches from Bill Hess:
+        Added support for defining Top, Bottom, Left, Right cell borders to render
+        Added support for splitting multiple columns of data into a group header
+    Many thanks to Bill for the above work :)
+    
     Fixed calculation of $field->{text_width} ( take into account user-defined text_whitespace )
     Replaced max_font_size with max_cell_height - better way of handling Y-space
     Incorporated groups into setup_cell_definitions()
     Changed $field in setup_cell_definitions() to $cell
     Added support for reprinting group headers on a new page
     Fixed error in rendering final group footers if there is no footer defined. How did this happen?
-    Added support for defining Top, Bottom, Left, Right cell borders to render - thanks to Bill Hess for patch
-    Added support for splitting multiple columns of data into a group header - thanks to Bill Hess for patch
     Added upper_buffer and lower_buffer keys to group & data definitions for defining whitespace buffers
     Added support for page breaking before a group header
     Reprint higher-level 'reprinting_header' group headers when a lower-level group triggers a page break

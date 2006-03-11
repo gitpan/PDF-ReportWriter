@@ -1,11 +1,13 @@
 #!/usr/bin/perl
-
+# vim: ts=8 sw=8 tw=0 ai nu noet
+#
 # (C) Daniel Kasak: dan@entropy.homelinux.org ...
-#  ... with patches from Bill Hess for various feature additions
-
+#  ... with contributions from Bill Hess and Cosimo Streppone
+#      ( see the changelog for details )
+#
 # See COPYRIGHT file for full license
-
-# See 'man PDF::ReportWriter' for full documentation ... or of course continue reading
+#
+# See 'man PDF::ReportWriter' for full documentation
 
 use strict;
 
@@ -36,65 +38,71 @@ use constant TRUE	=> 1;
 use constant FALSE	=> 0;
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '0.9';
+	$PDF::ReportWriter::VERSION = '1.0';
 }
 
 sub new {
 		
 	my ( $class, $self ) = @_;
-	
+
 	bless $self, $class;
-	
+
 	if ( $self->{paper} eq "A4" ) {
-		if ( $self->{orientation} eq "portrait" ) {
-			$self->{page_width} = A4_x;
-			$self->{page_height} = A4_y;
-		} elsif ( $self->{orientation} eq "landscape" ) {
-			$self->{page_width} = A4_y;
-			$self->{page_height} = A4_x;
-		} else {
-			die "Unsupported orientation: " . $self->{orientation} . "\n";
-		}
+	
+		$self->{page_width} = A4_x;
+		$self->{page_height} = A4_y;
+		
 	} elsif ( $self->{paper} eq "Letter" || $self->{paper} eq "letter" ) {
-		if ( $self->{orientation} eq "portrait" ) {
-			$self->{page_width} = letter_x;
-			$self->{page_height} = letter_y;
-		} elsif ( $self->{orientation} eq "landscape" ) {
-			$self->{page_width} = letter_y;
-			$self->{page_height} = letter_x;
-		} else {
-			die "Unsupported orientation: " . $self->{orientation} . "\n";
-		}
+	
+		$self->{page_width} = letter_x;
+		$self->{page_height} = letter_y;
+		
 	} elsif ( $self->{paper} eq "bsize" || $self->{paper} eq "Bsize" ) {
-		if ( $self->{orientation} eq "portrait" ) {
-			$self->{page_width} = bsize_x;
-			$self->{page_height} = bsize_y;
-		} elsif ( $self->{orientation} eq "landscape" ) {
-			$self->{page_width} = bsize_y;
-			$self->{page_height} = bsize_x;
-		} else {
-			die "Unsupported orientation: " . $self->{orientation} . "\n";
-		}
+	
+		$self->{page_width} = bsize_x;
+		$self->{page_height} = bsize_y;
+		
 	} elsif ( $self->{paper} eq "Legal" || $self->{paper} eq "legal" ) {
-		if ( $self->{orientation} eq "portrait" ) {
-			$self->{page_width} = legal_x;
-			$self->{page_height} = legal_y;
-		} elsif ( $self->{orientation} eq "landscape" ) {
-			$self->{page_width} = legal_y;
-			$self->{page_width} = legal_x;
+	
+		$self->{page_width} = legal_x;
+		$self->{page_height} = legal_y;
+		
+	# Parse user defined format `150 x 120 mm', or `29.7 x 21.0 cm', or `500X300'
+	# Default unit is `mm' unless specified. Accepted units: `mm', `in'
+	} elsif ( $self->{paper} =~ /^\s*([\d\.]+)\s*[xX]\s*([\d\.]+)\s*(\w*)$/ ) {
+
+		my $unit = lc($3) || 'mm';
+		$self->{page_width}  = $1;
+		$self->{page_height} = $2;
+		if($unit eq 'mm') {
+			$self->{page_width}  *= &mm;
+			$self->{page_height} *= &mm;
+		} elsif( $unit eq 'in' ) {
+			$self->{page_width}  *= &in;
+			$self->{page_height} *= &in;
 		} else {
-			die "Unsupported orientation: " . $self->{orientation} . "\n";
+			die 'Unsupported measure unit: ' . $unit . "\n";
 		}
 	} else {
 		die "Unsupported paper format: " . $self->{paper} . "\n";
 	}
-	
-	# Create a new PDF document
-	$self->{pdf} = PDF::API2->new;
-	
+
+	# Swap width/height in case of landscape orientation
+	if( exists $self->{orientation} && $self->{orientation} ) {
+		if( $self->{orientation} eq 'landscape' ) {
+			($self->{page_width},  $self->{page_height}) =
+			($self->{page_height}, $self->{page_width});
+		} elsif( $self->{orientation} ne 'portrait' ) {
+			die 'Unsupported orientation: ' . $self->{orientation} . "\n"; 
+        	}
+	}
+
+	# Create a new PDF document if needed
+	$self->{pdf} ||= PDF::API2->new;
+
 	# Set some info stuff
 	my $localtime = localtime time;
-	
+
 	$self->{pdf}->info(
 				Author		=> $self->{info}->{Author},
 				CreationDate	=> $localtime,
@@ -131,17 +139,17 @@ sub new {
 	if ( !$self->{default_font_size} ) {
 		$self->{default_font_size} = 12;
 	}
-	
+
 	return $self;
-	
+
 }
 
 sub setup_cell_definitions {
-	
+
 	my ( $self, $cell_array, $type, $group, $group_type ) = @_;
-	
+
 	my $x = $self->{x_margin};
-	
+
 	for my $cell ( @{$cell_array} ) {
 		
 		# The cell's left-hand border position
@@ -159,16 +167,23 @@ sub setup_cell_definitions {
 		}
 		
 		# The cell's height
-		$cell->{height} = $cell->{text_whitespace} + $cell->{font_size};
-		
+		if( $cell->{barcode} ) {
+			# TODO: This calculation should be done adding upper mending zone,
+			#       lower mending zone, font size and bars height, but probably
+			#       we don't have them here...
+			$cell->{height} = $cell->{zone} + 25;
+		} else {
+			$cell->{height} = $cell->{text_whitespace} + $cell->{font_size};
+		}
+
 		# The cell's left-hand text position
 		$cell->{x_text} = $x + $cell->{text_whitespace};
 		
 		# The cell's full width ( border to border )
-		$cell->{border_width} = ( $self->{page_width} - ( $self->{x_margin} * 2 ) ) * $cell->{percent} / 100;
+		$cell->{full_width} = ( $self->{page_width} - ( $self->{x_margin} * 2 ) ) * $cell->{percent} / 100;
 		
 		# The cell's maximum width of text
-		$cell->{text_width} = $cell->{border_width} - ( $cell->{text_whitespace} * 2 );
+		$cell->{text_width} = $cell->{full_width} - ( $cell->{text_whitespace} * 2 );
 		
 		# We also need to set the data-level or header/footer-level max_cell_height
 		# This refers to the height of the actual cell ...
@@ -182,6 +197,13 @@ sub setup_cell_definitions {
 			# is appropriate default behaviour for these ( ie usually doesn't look good )
 			if ( ! $cell->{background} ) {
 				$cell->{background} = $self->{data}->{background};
+			}
+		} elsif ( $type eq "field_headers" ) {
+			if ( $cell->{height} > $self->{data}->{max_field_header_height} ) {
+				$self->{data}->{max_field_header_height} = $cell->{height};
+			}
+			if ( ! $cell->{background} ) {
+				$cell->{background} = $self->{data}->{headings}->{background};
 			}
 		} elsif ( $type eq "page_header" ) {
 			if ( $cell->{height} > $self->{data}->{page_header_max_cell_height} ) {
@@ -212,8 +234,26 @@ sub setup_cell_definitions {
 			
 		}
 		
+		# Set 'bold' key for legacy behaviour anything other than data cells and images
+		if ( $type ne "data" && ! $cell->{image} && ! exists $cell->{bold} ) {
+			$cell->{bold} = TRUE;
+		}
+		
+		if ( $cell->{image} ) {
+			
+			# Default to a buffer of 1 to surround images,
+			# otherwise they overlap cell borders
+			if ( ! exists $cell->{image}->{buffer} ) {
+				$cell->{image}->{buffer} = 1;
+			}
+			
+			# Initialise the tmp hash that we store temporary image dimensions in later
+			$cell->{image}->{tmp} = {};
+			
+		}
+		
 		# Move along to the next position
-		$x += $cell->{border_width};
+		$x += $cell->{full_width};
 		
 	}
 	
@@ -241,6 +281,13 @@ sub setup_cell_definitions {
 		}
 	}
 	
+	# Set up field_header upper_buffer and lower_buffer values
+	if ( $type eq "field_headers" ) {
+		if ( ! exists $self->{data}->{field_headers_upper_buffer} ) {
+			$self->{data}->{field_headers_upper_buffer} = 0;
+		}
+	}
+	
 }
 
 sub render_data {
@@ -264,6 +311,28 @@ sub render_data {
 	# Normal cells
 	$self->setup_cell_definitions( $self->{data}->{fields}, "data" );
 	
+	# Field headers
+	if ( ! $self->{data}->{no_field_headers} ) {
+		# Construct the field_headers definition if required ...
+		#  ... ie provide legacy behaviour if no field_headers array provided
+		if ( ! $self->{data}->{field_headers} ) {
+			foreach my $field ( @{$self->{data}->{fields}} ) {
+				push @{$self->{data}->{field_headers}},
+				{
+					name		=> $field->{name},
+					percent		=> $field->{percent},
+					bold		=> TRUE,
+					font_size	=> $field->{font_size},
+					text_whitespace	=> $field->{text_whitespace},
+					align		=> "centre",
+					colour		=> $field->{header_colour}
+				};
+			}
+		}
+		# And now continue with the normal setup ...
+		$self->setup_cell_definitions( $self->{data}->{field_headers}, "field_headers" );
+	}
+	
 	# Page headers
 	if ( $self->{data}->{page}->{header} ) {
 		$self->setup_cell_definitions( $self->{data}->{page}->{header}, "page_header" );
@@ -280,13 +349,15 @@ sub render_data {
 								percent		=> 50,
 								font_size	=> 8,
 								text		=> "Rendered on %TIME%",
-								align		=> "left"
+								align		=> "left",
+								bold		=> FALSE
 							},
 							{
 								percent		=> 50,
 								font_size	=> 8,
 								text		=> "Page %PAGE% of %PAGES%",
-								align		=> "right"
+								align		=> "right",
+								bold		=> FALSE
 							}
 						  ];
 		$self->setup_cell_definitions( $self->{data}->{page}->{footer}, "page_footer" );
@@ -302,6 +373,11 @@ sub render_data {
 		# Set all group values to a special character so we recognise that we are entering
 		# a new value for each of them ... particularly the GrandTotal group
 		$group->{value} = "!";
+		
+		# Set the data_column of the GrandTotals group so the user doesn't have to specify it
+		if ( $group->{name} eq "GrandTotals" ) {
+			$group->{data_column} = scalar ( @{( $self->{data}->{data_array}[0] )} );
+		}
 	}
 	
 	# Create an array for the group header queue ( otherwise new_page() won't work so well )
@@ -318,7 +394,7 @@ sub render_data {
 	$self->{page_footer_and_margin} = $size_calculation->{current_height} + $self->{y_margin};
 	
 	# Create a new page if we have none ( ie at the start of the report )
-	if ( ! $self->{page} ) {
+	if ( ! $self->{pages} ) {
 		$self->new_page;
 	}
 	
@@ -328,9 +404,6 @@ sub render_data {
 	
 	# Main loop
 	for my $row ( @{$self->{data}->{data_array}} ) {
-		
-		# Check if we're entering a new group
-		$self->{need_data_header} = FALSE;
 		
 		# Assemble the Group Header queue ... firstly assuming we *don't* require
 		# a page break due to a lack of remaining paper. assemble_group_header_queue()
@@ -349,7 +422,7 @@ sub render_data {
 			
 			my $size_calculation = $self->calculate_y_needed(
 										{
-											fields		=> $self->{data}->{fields},
+											cells		=> $self->{data}->{fields},
 											max_cell_height	=> $self->{data}->{max_cell_height},
 											row		=> $row
 										}
@@ -372,24 +445,28 @@ sub render_data {
 			}
 			
 		}
-		
+
 		# We're using $row_counter here to detect whether we've actually printed
 		# any data yet or not - we don't want to page break on the 1st page ...
 		if ( $want_new_page && $row_counter ) {
 			$self->new_page;
 		}
-		
+
 		$self->render_row(
-					$self->{data}->{fields},
-					$row,
-					"data",
-					$self->{data}->{max_cell_height},
-					$self->{data}->{upper_buffer},
-					$self->{data}->{lower_buffer}
-				 );
-		
+			$self->{data}->{fields},
+			$row,
+			'data',
+			$self->{data}->{max_cell_height},
+			$self->{data}->{upper_buffer},
+			$self->{data}->{lower_buffer}
+		);
+
+		# Reset the need_data_header flag after rendering a data row ...
+		#  ... this gets reset when entering a new group
+		$self->{need_data_header} = FALSE;
+
 		$row_counter ++;
-		
+
 	}
 	
 	# The final group footers will not have been triggered ( only happens when we get a *new* group ), so we do them now
@@ -415,8 +492,7 @@ sub assemble_group_header_queue {
 		#   - this group has been set as a 'reprinting_header' and
 		
 		if ( ( $group->{value} ne $$row[$group->{data_column}] ) ||
-			( $want_new_page && $group->{reprinting_header} )
-		   ) {
+			( $want_new_page && $group->{reprinting_header} ) ) {
 			
 			# Remember to page break if we've been told to
 			if ( $group->{page_break} ) {
@@ -453,19 +529,59 @@ sub assemble_group_header_queue {
 	
 }
 
+# Define a new page like the PDF template (if template is specified)
+# or create a new page from scratch...
+sub page_template
+{
+        my $self     = shift;
+        my $pdf_tmpl = $self->{template};
+        my $new_page;
+        my $user_warned = 0;
+
+        if(defined $pdf_tmpl && $pdf_tmpl)
+        {
+
+                # Try to open template page
+
+		# TODO Cache this object to include a new page without
+		#      repeated opening of template file
+		if(my $pdf_doc = PDF::API2->open($pdf_tmpl))
+		{
+
+			# Template opened, import first page
+			$new_page = $self->{pdf}->importpage($pdf_doc, 1);
+		}
+
+		# Warn user in case of invalid template file
+		unless($new_page || $user_warned)
+		{
+			warn "Defined page template $pdf_tmpl not valid. Creating empty page.";
+			$user_warned = 1;
+		}
+
+	}
+
+	# Generate an empty page if no valid page was extracted
+	# from the template or there was no template...
+	$self->{pdf} ||= PDF::API2->new();                     # XXX
+	$new_page    ||= $self->{pdf}->page;
+
+	return ($new_page);
+}
+
 sub new_page {
-	
+
 	my $self = shift;
-	
-	# Create a new page	
-	my $page = $self->{pdf}->page;
-	
+
+	# Create a new page	and eventually apply pdf template
+	my $page = $self->page_template;
+
 	# Set page dimensions
 	$page->mediabox( $self->{page_width}, $self->{page_height} );
-	
+
 	# Create a new txt object for the page
 	$self->{txt} = $page->text;
-	
+
 	# Set y to the top of the page
 	$self->{y} = $self->{page_height} - $self->{y_margin};
 	
@@ -486,7 +602,7 @@ sub new_page {
 	
 	# Push new page onto array of pages
 	push @{$self->{pages}}, $page;
-	       
+	
 	# Render page header if defined
 	if ( $self->{data}->{page}->{header} ) {
 		$self->render_row(
@@ -496,6 +612,8 @@ sub new_page {
 					$self->{data}->{page_header_max_cell_height},
 					0, # Page headers don't need
 					0  # upper / lower buffers
+					# TODO: is this statement right?
+					# Maybe we should add upper buffers?
 				 );
 	}
 	
@@ -503,15 +621,15 @@ sub new_page {
 	# ( but not if the group has the special value ! which means that we haven't started yet,
 	# and also not if we've got group headers already queued )
 	for my $group ( @{$self->{data}->{groups}} ) {
-		# *** TODO *** We're getting NULL values in $self->{group_header_queue}
-		# Is this important? Also, why were we using the test below, when the replacement
-		# works just as well?
-#		if ( ( ! scalar @{$self->{group_header_queue}} ) && ( $group->{reprinting_header} ) && ( $group->{value} ne "!" ) ) {
-		if ( ( ! $self->{group_header_queue} ) && ( $group->{reprinting_header} ) && ( $group->{value} ne "!" ) ) {
+		if (	( ! $self->{group_header_queue} )
+			&& ( $group->{reprinting_header} )
+			&& ( $group->{value} ne "!" )
+		   ) {
 			$self->group_header( $group );
 		}
 	}
-	
+
+	return($page);
 }
 
 sub group_header {
@@ -520,14 +638,14 @@ sub group_header {
 	
 	my ( $self, $group ) = @_;
 	
-	if ( $group->{name} ne "GrandTotals" ) {
+	if ( $group->{name} ne 'GrandTotals' ) {
 		$self->{y} -= $group->{header_upper_buffer};
 	}
-	
+
 	$self->render_row(
 				$group->{header},
 				$group->{value},
-				"group_header",
+				'group_header',
 				$group->{header_max_cell_height},
 				$group->{header_upper_buffer},
 				$group->{header_lower_buffer}
@@ -551,11 +669,11 @@ sub group_footer {
 	if ($self->{y} - $y_needed < 0) {
 		$self->new_page;
 	}
-	
+
 	$self->render_row(
 				$group->{footer},
 				$group->{value},
-				"group_footer",
+				'group_footer',
 				$group->{footer_max_cell_height},
 				$group->{footer_upper_buffer},
 				$group->{footer_lower_buffer}
@@ -573,86 +691,126 @@ sub calculate_y_needed {
 	my ( $self, $options ) = @_;
 	
 	# Unpack options hash
-	my $fields		= $options->{fields};
+	my $cells		= $options->{cells};
 	my $max_cell_height	= $options->{max_cell_height};
-	
+
 	# We've just been passed the max_cell_height
 	# This will be all we need if we are only rendering text
 	my $current_height	= $max_cell_height;
 	
-	my ( $img_x, $img_y, $img_type );
-	my $scale_ratio = 1; # Default is no scaling
-	
 	# Search for an image in the current row
 	# If one is encountered, adjust our $y_needed according to scaling definition
-	# Images can take up the full cell
-	
-	# *** TODO *** implement something similar ( or identical )
-	# to $field->{text_whitespace} so images can have a whitespace border
 	
 	my $counter = 0;
-	
-	for my $field ( @{$options->{fields}} ) {
+
+	for my $cell ( @{$options->{cells}} ) {
 		
-		if ( $field->{image} ) {
-			
+		if ( $cell->{image} ) {
+	
+			# Use this to accumulate image temporary data
+			my %imgdata;
+
 			# Support dynamic images ( image path comes from data array )
 			# Note: $options->{row} won't necessarily be a data array ...
 			#  ... it will ONLY be an array if we're rendering a row of data
 			
-			if ( $field->{image}->{dynamic} && ref $options->{row} eq "ARRAY" ) {
-				$field->{image}->{path} = $options->{row}[$counter];
+			if ( $cell->{image}->{dynamic} && ref $options->{row} eq "ARRAY" ) {
+				$cell->{image}->{path} = $options->{row}->[$counter];
 			}
-			
-			my $y_scale_ratio;
 			
 			# *** TODO *** support use of images in memory instead of from files?
-			( $img_x, $img_y, $img_type ) = imgsize( $field->{image}->{path} );
+			# Is there actually a use for this? It's possible that images could come
+			# from a database, or be created on-the-fly. Wait for someone to request
+			# it, and then get them to implement it :)
+			
+			# Only do imgsize() calculation if this is a different path from last time ...
+			if ( ( ! $imgdata{img_x} ) || ( $cell->{image}->{path} && $cell->{image}->{path} ne $cell->{image}->{previous_path} ) ) {
+				(
+					$imgdata{img_x},
+					$imgdata{img_y},
+					$imgdata{img_type}
+				) = imgsize( $cell->{image}->{path} );
+				# Remember that we've calculated 
+				$cell->{image}->{previous_path} = $cell->{image}->{path};
+			}
 			
 			# Deal with problems with image
-			if ( ! $img_x ) {
-				warn "Image $field->{image}->{path} had zero width ... setting to 1\n";
-				$img_x = 1;
+			if ( ! $imgdata{img_x} ) {
+				warn "Image $cell->{image}->{path} had zero width ... setting to 1\n";
+				$imgdata{img_x} = 1;
 			}
 			
-			if ( ! $img_y ) {
-				warn "Image $field->{image}->{path} had zero height ... setting to 1\n";
-				$img_y = 1;
+			if ( ! $imgdata{img_y} ) {
+				warn "Image $cell->{image}->{path} had zero height ... setting to 1\n";
+				$imgdata{img_y} = 1;
+			}
+
+			if ( $self->{debug} ) {
+				print "Image $cell->{image}->{path} is $imgdata{img_x} x $imgdata{img_y}\n";
 			}
 			
-			if ( $field->{image}->{height} ) {
+			if ( $cell->{image}->{height} > 0 ) {
+
 				# The user has defined an image height
-				$y_scale_ratio = $field->{image}->{height} / $img_y;
-			} elsif ( $field->{image}->{scale_to_fit} ) {
+				$imgdata{y_scale_ratio} = ( $cell->{image}->{height} - ( $cell->{image}->{buffer} * 2 ) ) / $imgdata{img_y};
+
+			} elsif ( $cell->{image}->{scale_to_fit} ) {
+
 				# We're scaling to fit the current cell
-				$y_scale_ratio = $current_height / $img_y;
+				$imgdata{y_scale_ratio} = ( $current_height - ( $cell->{image}->{buffer} * 2 ) ) / $imgdata{img_y};
+
 			} else {
+
 				# no scaling or hard-coded height defined
-				$y_scale_ratio = 1;
+				if ( ( $imgdata{img_y} + $cell->{image}->{buffer} * 2 ) > ( $self->{y} - $self->{page_footer_and_margin} ) ) {
+					$imgdata{y_scale_ratio} = ( $imgdata{img_y} + $cell->{image}->{buffer} * 2 ) / ( $self->{y} - $self->{page_footer_and_margin} );
+				} else {
+					$imgdata{y_scale_ratio} = 1;
+				}
 			};
+
+			if ( $self->{debug} ) {
+				print "Current height ( before adjusting for this image ) is $current_height\n";
+				print "Y scale ratio = $imgdata{y_scale_ratio}\n";
+			}
 			
 			# A this point, no matter what scaling, fixed size, or lack of
 			# other instructions, we still have to test whether the image will fit
 			# length-wise in the cell
 			
-			my $x_scale_ratio = $field->{border_width} / $img_x;
-			
+			$imgdata{x_scale_ratio} = ( $cell->{full_width} - ( $cell->{image}->{buffer} * 2 ) ) / $imgdata{img_x};
+
+			if ( $self->{debug} ) {
+				print "X scale ratio = $imgdata{x_scale_ratio}\n";
+			}
+
 			# Choose the smallest of x & y scale ratios to ensure we'll fit both ways
-			if ( $y_scale_ratio < $x_scale_ratio ) {
-				$scale_ratio = $y_scale_ratio;
-			} else {
-				$scale_ratio = $x_scale_ratio;
+			$imgdata{scale_ratio} = $imgdata{y_scale_ratio} < $imgdata{x_scale_ratio}
+				? $imgdata{y_scale_ratio}
+				: $imgdata{x_scale_ratio};
+
+			if ( $self->{debug} ) {
+				print "Smallest scaling ratio is $imgdata{scale_ratio}\n";
 			}
 			
-			# Set our new image dimensions based on this scale_ratio
-			$img_x *= $scale_ratio;
-			$img_y *= $scale_ratio;
-			$current_height = $img_y;
-			
+			# Set our new image dimensions based on this scale_ratio,
+			# but *DON'T* overwrite the original dimensions ...
+			#  ... we're caching these for later re-use
+			$imgdata{this_img_x} = $imgdata{img_x} * $imgdata{scale_ratio};
+			$imgdata{this_img_y} = $imgdata{img_y} * $imgdata{scale_ratio};
+			$current_height = $imgdata{this_img_y} + ( $cell->{image}->{buffer} * 2 );
+
+			if ( $self->{debug} ) {
+				print "New dimensions:\n Image X: $imgdata{this_img_x}\n Image Y: $imgdata{this_img_y}\n";
+				print " New height: $current_height\n";
+			}
+
+			# Store image data for future reference
+			$cell->{image}->{tmp} = \%imgdata;
 		}
-		
+
 		$counter ++;
-		
+
 	}
 	
 	# If we have queued group headers, calculate how much Y space they need
@@ -682,21 +840,16 @@ sub calculate_y_needed {
 	
 	return {
 			current_height	=> $current_height,
-			y_needed	=> $y_needed,
-			img_type	=> $img_type,
-			img_x		=> $img_x,
-			img_y		=> $img_y,
-			scale_ratio	=> $scale_ratio
-			
+			y_needed	=> $y_needed
 	       };
 	
 }
 
 sub render_row {
 	
-	my ( $self, $fields, $row, $type, $max_cell_height, $upper_buffer, $lower_buffer ) = @_;
+	my ( $self, $cells, $row, $type, $max_cell_height, $upper_buffer, $lower_buffer ) = @_;
 	
-	# $fields	- a hash of field definitions
+	# $cells	- a hash of cell definitions
 	# $row		- the current row to render
 	# $type		- possible values are:
 	#			- header		- prints a row of field names
@@ -715,7 +868,7 @@ sub render_row {
 	# Calculate the y space required, including queued group footers
 	my $size_calculation = $self->calculate_y_needed(
 								{
-									fields		=> $fields,
+									cells		=> $cells,
 									max_cell_height	=> $max_cell_height,
 									row		=> $row
 								}
@@ -724,18 +877,14 @@ sub render_row {
 	# Unpack size_calculation results ( easier to read like this )
 	my $current_height	= $size_calculation->{current_height};
 	my $y_needed		= $size_calculation->{y_needed};
-	my $img_type		= $size_calculation->{img_type};
-	my $img_x		= $size_calculation->{img_x};
-	my $img_y		= $size_calculation->{img_y};
-	my $scale_ratio		= $size_calculation->{scale_ratio};
-	
+
 	# Page Footer / New Page / Page Header if necessary, otherwise move down by $current_height
 	# ( But don't force a new page if we're rendering a page footer )
 	
 	if ( $type ne "page_footer" && $self->{y} - ( $y_needed + $self->{page_footer_and_margin} ) < 0 ) {
 		$self->new_page;
 	}
-	
+
 	# Trigger any group headers that we have queued, but ONLY if we're in a data cycle
 	if ( $type eq "data" ) {
 		while ( my $queued_headers = pop @{$self->{group_header_queue}} ) {
@@ -743,299 +892,492 @@ sub render_row {
 		}
 	}
 	
-	if ( $type eq "data" && $self->{need_data_header} && !$self->{data}->{no_field_headers} ) {
+	if ( $type eq "data" && $self->{need_data_header} && ! $self->{data}->{no_field_headers} ) {
 		$self->render_row(
-					$fields,
+					$self->{data}->{field_headers},
 					0,
 					"header",
-					$self->{data}->{max_cell_height},
-					$self->{data}->{upper_buffer}, # At the moment, we re-use
-					$self->{data}->{lower_buffer}  # the standard data buffers
+					$self->{data}->{max_field_header_height},
+					$self->{data}->{field_header_upper_buffer},
+					$self->{data}->{field_header_lower_buffer}
 				 );
 	}
 	
 	# Move down for upper_buffer, and then for the current row height
 	$self->{y} -= $upper_buffer + $current_height;
-	
-	# Render row
-	my $field_counter = 0;
-	
-	for my $field ( @{$fields} ) {
-		
-		# Render an ellipse, box, or cell borders
-		if ( $field->{background}->{shape} || ( $type eq "header" && $self->{data}->{headings}->{background} ) ) {
-			
-			if ( $field->{background}->{shape} eq "ellipse"
-			    || ( $type eq "header"
-					&& $self->{data}->{headings}->{background}
-					&& $self->{data}->{headings}->{background}->{shape} eq "ellipse" )) {
-				
-				# Ellipse
-				my $colour;
-				
-				if ( $type eq "header" ) {
-					$colour = $self->{data}->{headings}->{background}->{colour};
-				} else {
-					$colour = $field->{background}->{colour};
-				}
-				
-				$self->{shape}->fillcolor( $colour );
-				
-				$self->{shape}->ellipse(
-						$field->{x_border} + ( $field->{border_width} / 2 ),	# x centre
-						$self->{y} + ( $current_height / 2 ),			# y centre
-						$field->{border_width} / 2,				# length ( / 2 ... for some reason )
-						$current_height / 2					# height ( / 2 ... for some reason )
-					       );
-				
-				$self->{shape}->fill;
-				
-			} elsif ( $field->{background}->{shape} eq "box" || ( $type eq "header"
-					&& $self->{data}->{headings}->{background}
-					&& $self->{data}->{headings}->{background}->{shape} eq "box" )) {
-				
-				# Box
-				my $colour;
-				
-				if ( $type eq "header" ) {
-					$colour = $self->{data}->{headings}->{background}->{colour};
-				} else {
-					$colour = $field->{background}->{colour};
-				}
-				
-				$self->{shape}->fillcolor( $colour );
-				
-				$self->{shape}->rect(
-						$field->{x_border},					# left border
-						$self->{y},						# bottom border
-						$field->{border_width},					# length
-						$current_height						# height
-					    );
-				
-				$self->{shape}->fill;
-		
-			}
-					
-		}
-		
-		if ( $field->{background}->{border} ) {
-			
-			# Cell Borders
-			$self->{line}->strokecolor( $field->{background}->{border} );
-                        
-                        # If the 'borders' key does not exist then draw all borders
-                        # to support code written before this was added.
-                        # A value of 'all' can also be used.
-                        if( ( ! exists $field->{background}->{borders} ) || ( $field->{background}->{borders} =~ /^all$/i ) ) {
-				$field->{background}->{borders} = "tblr";
-                        }
-                        
-			# The 'borders' key looks for the following chars in the string
-			#  t or T - Top Border Line
-			#  b or B - Bottom Border Line
-			#  l or L - Left Border Line
-			#  r or R - Right Border Line
-			
-			# Bottom Horz Line
-			if( $field->{background}->{borders} =~ /b|B/ ) {
-				$self->{line}->move( $field->{x_border}, $self->{y} );
-				$self->{line}->line( $field->{x_border} + $field->{border_width}, $self->{y} );
-				$self->{line}->stroke;
-			}
 
-			# Right Vert Line
-			if( $field->{background}->{borders} =~ /r|R/ ) {
-				$self->{line}->move( $field->{x_border} + $field->{border_width}, $self->{y} );
-				$self->{line}->line( $field->{x_border} + $field->{border_width}, $self->{y} + $current_height );
-				$self->{line}->stroke;
-			}
-			
-			# Top Horz Line
-			if( $field->{background}->{borders} =~ /t|T/ ) {
-				$self->{line}->move( $field->{x_border} + $field->{border_width}, $self->{y} + $current_height );
-				$self->{line}->line( $field->{x_border}, $self->{y} + $current_height );
-				$self->{line}->stroke;
-			}
-			
-			# Left Vert Line
-			if( $field->{background}->{borders} =~ /l|L/ ) {
-				$self->{line}->move( $field->{x_border}, $self->{y} + $current_height );
-				$self->{line}->line( $field->{x_border}, $self->{y} );
-				$self->{line}->stroke;
-			}
-			
-		}
-		
-		# That's cell borders / backgrounds done
-		
-		# Now for the actual contents of the cell ...
-		
-		if ( $field->{image} && $type ne "header" ) {
-			
-			# *** TODO *** support use of images in memory instead of from files?
-			my $gfx = $self->{pages}[ scalar@{$self->{pages}} - 1 ]->gfx;
-			my $image;
-			
-			# *** TODO *** Add support for more image types
-			if ( $img_type eq "PNG" ) {
-				$image = $self->{pdf}->image_png($field->{image}->{path});
-			} elsif ( $img_type eq "JPG" ) {
-				$image = $self->{pdf}->image_jpeg($field->{image}->{path});
-			}
-			
-			my ( $img_x_pos, $img_y_pos );
-			
-			# Alignment
-			if ( $field->{align} && ( $field->{align} eq "centre" || $field->{align} eq "center" ) ) {
-				$img_x_pos = $field->{x_border} + ( ( $field->{border_width} - $img_x ) / 2 );
-				$img_y_pos = $self->{y} - ( ( $current_height - $img_y ) / 2 );
-			} elsif ( $field->{align} && $field->{align} eq "right") {
-				$img_x_pos = $field->{x_border} + ( $field->{border_width} - $img_x );
-				$img_y_pos = $self->{y} - ( ( $current_height - $img_y ) / 2 );
-			} else {
-				$img_x_pos = $field->{x_border};
-				$img_y_pos = $self->{y} - ( ( $current_height - $img_y ) / 2 );
-			};
-			
-			$gfx->image(
-					$image,			# The image
-					$img_x_pos,		# X
-					$img_y_pos,		# Y
-					$scale_ratio		# scale
-				   );
-			
+	#
+	# Render row
+	#
+
+	# Prepare options to be passed to *all* cell rendering methods
+	my $options = {
+			current_row	=> $row,
+			row_type        => $type,	# Row type (data, header, group, footer)
+			cell_counter    => 0,
+			cell_y_border	=> $self->{y},
+			cell_full_height=> $current_height,
+			page		=> $self->{pages}->[ scalar( @{$self->{pages}} ) - 1 ],
+		    };
+
+	for my $cell ( @{$cells} ) {
+
+		$options->{cell} = $cell;
+
+		if( ref( $options->{current_row} ) eq 'ARRAY' ) {
+			$options->{current_value} = $options->{current_row}->[ $options->{cell_counter} ];
 		} else {
-			
-			# Figure out what we're putting into the current cell and set the font and size
-			# We currently default to Bold if we're doing a header
-			# We also check for an specific font for this field, or fall back on the report default
-			
-			my $string;
-			
-			if ($type =~ /header/ ) {
-				$self->{txt}->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Bold}, $field->{font_size} );
-			} else {
-				$self->{txt}->font( $self->{fonts}->{ ( $field->{font} || $self->{default_font} ) }->{Roman}, $field->{font_size} );
-			}
-			
-			if ($type eq "header") {
-				$string = $field->{name};
-			} elsif ( $type eq "data" ) {
-				$string = $$row[$field_counter];
-			} elsif ( $type eq "group_header" ) {
-				$string = $field->{text};
-				if( $field->{delimiter} ) {
-                                   # This assumes the delim is a non-alpha char like |,~,!, etc...
-                                   my $delim = "\\" . $field->{delimiter}; 
-                                   my $row2 = (split /$delim/, $row)[$field->{index}];
-                                   $string =~ s/\?/$row2/g;
-                                }
-                                else {
-                                   # In the case of a group header, the $row variable is the group value
-                                   $string = $field->{text};
-                                   $string =~ s/\?/$row/g;
-                                }
-			} elsif ( $type eq "group_footer" ) {
-				if ( exists($field->{aggregate_source}) ) {
-					if ($field->{text} eq "GrandTotals") {
-						$string = $self->{data}->{fields}[$field->{aggregate_source}]->{grand_aggregate_result};
-					} else {
-						$string = $self->{data}->{fields}[$field->{aggregate_source}]->{group_results}->{$field->{text}};
-					}
-				} else {
-					$string =$field->{text};
-				}
-				$string =~ s/\?/$row/g; # In the case of a group footer, the $row variable is the group value
-			} elsif ( $type =~ m/^page/ ) {
-				# page_header or page_footer
-				$string = $field->{text};
-				$string =~ s/\%PAGE\%/$row->{current_page}/;
-				$string =~ s/\%PAGES\%/$row->{total_pages}/;
-				$string =~ s/\%TIME\%/$row->{current_time}/;
-			}
-			
-			# Set colour or default to black
-			if ($type eq "header") {
-				$self->{txt}->fillcolor( $field->{header_colour} || "black" );
-			} else {
-				if ($field->{colour_func}) {
-					if ($self->{debug}) {
-						print "\nRunning colour_func() on data: " . $string . "\n";
-					}
-					$self->{txt}->fillcolor( $field->{colour_func}($string) || "black" );
-				} else {
-					$self->{txt}->fillcolor( $field->{colour} || "black" );
-				}
-			}
-			
-			# Apply type formatting ( eg currency )
-			if ( $field->{type} && $field->{type} =~ /currency/ && $type ne "header" ) {
-				my $decimal_fill = 1;
-				if ($field->{type} eq "currency:no_fill") {
-					$decimal_fill = 0;
-				}
-				my $dollar_formatter = new Number::Format(
-										thousands_sep	=> ',',
-										decimal_point	=> '.',
-										decimal_fill	=> $decimal_fill,
-										int_curr_symbol	=> 'USD'
-									 );
-				$string = "\$" . $dollar_formatter->format_number($string);
-			}
-			
-			# Make sure the current string fits inside the current cell
-			while ($self->{txt}->advancewidth($string) > $field->{text_width}) {
-				chop($string);
-			}
-			
-			# Alignment
-			if ( ( $field->{align} && ( $field->{align} eq "centre" || $field->{align} eq "center" ) ) || $type eq "header") {
-				# Calculate the width of the string, and move to the right so there's an
-				# even gap at both sides, and render left-aligned from there
-				my $string_width = $self->{txt}->advancewidth($string);
-				my $x_offset = ( $field->{text_width} - $string_width ) / 2;
-				my $x_anchor = $field->{x_text} + $x_offset;
-				$self->{txt}->translate( $x_anchor, $self->{y} + $field->{text_whitespace} );
-				$self->{txt}->text($string);
-			} elsif ( $field->{align} && $field->{align} eq "right") {
-				$self->{txt}->translate ( $field->{x_text} + $field->{text_width}, $self->{y} + $field->{text_whitespace} );
-				$self->{txt}->text_right($string);
-			} else {
-				# Default alignment if left-aligned
-				$self->{txt}->translate( $field->{x_text}, $self->{y} + $field->{text_whitespace} );
-				$self->{txt}->text($string);
-			}
-			
-			# Now perform aggregate functions if defined
-			if ( $type eq "data" && $field->{aggregate_function} ) {
-				if ($field->{aggregate_function} eq "sum") {
-					for my $group ( @{$self->{data}->{groups}} ) {
-						$field->{group_results}->{$group->{name}} += $$row[$field_counter] || 0;
-					}
-					$field->{grand_aggregate_result} += $$row[$field_counter] || 0;
-				} elsif ($field->{aggregate_function} eq "count") {
-					for my $group ( @{$self->{data}->{groups}} ) {
-						$field->{group_results}->{$group->{name}} += 1;
-					}
-					$field->{grand_aggregate_result} += 1;
-				}
-			} elsif ( $type eq "data" && $field->{custom_function} ) {
-				# TODO: Custom function support.
-				# We need to pass:
-				# - the current value
-				# - the current aggregate result,
-				# - the current grand result
-				# Do we then allow the custom function to adjust these values?
-			}
+			$options->{current_value} = $options->{current_row};
 		}
 		
-		$field_counter ++;
-		
+		#} else {
+		#} else {
+		#	warn 'Found notref value '.$options->{current_row};
+		#	$options->{current_value} = $options->{current_row}->[ $options->{cell_counter} ];
+		#	$options->{current_value} = $options->{current_row};
+		#}
+
+		$self->render_cell($cell, $options);
+		$options->{cell_counter}++;
+
 	}
-	
+
 	# Move down for the lower_buffer
 	$self->{y} -= $lower_buffer;
+
+}
+
+sub render_cell {
+
+	my( $self, $cell, $options ) = @_;
+
+	my $type           = $options->{row_type};
+	my $row            = $options->{current_row};
+	my $current_height = $options->{cell_full_height};
+	my $cell_counter   = $options->{cell_counter};
+
+	# Render an ellipse, box, or cell borders
+	if( exists $cell->{background} )
+	{
+		$self->render_cell_background( $cell, $options );
+	}
+
+	# That's cell borders / backgrounds done
+
+	# Now for the actual contents of the cell ...
+
+	if ( $cell->{image} ) {
+
+		$self->render_cell_image( $cell, $options );
+
+	} elsif ( $cell->{custom_render_func} ) {
+
+		# If a custom rendering function is defined, we pass a hashref of useful stuff
+		# to the function, along with the current page, and then let the function
+		# do it's worst :)
+
+		# XXX Here to unify all the universal forces, the first parameter
+		# should be the cell "object", then all the options, even if options
+		# already contains a "cell" object
+
+		$cell->{custom_render_func}( $options );
+
+	} elsif ( $cell->{barcode} ) {
+
+		# Barcode cell
+
+		$self->render_cell_barcode( $cell, $options );
+
+	} else {
+
+		# Generic text cell rendering
+
+		$self->render_cell_text( $cell, $options );
+
+		#
+		# Now perform aggregate functions if defined
+		#
+		if ( $type eq 'data' && $cell->{aggregate_function} ) {
+
+			my $cell_value = $options->{current_value} || 0;
+			my $group_res  = $cell->{group_results} ||= {};
+
+			if ($cell->{aggregate_function} eq "sum") {
+				for my $group ( @{$self->{data}->{groups}} ) {
+					$group_res->{$group->{name}} += $cell_value;
+				}
+				$cell->{grand_aggregate_result} += $cell_value;
+			} elsif ($cell->{aggregate_function} eq "count") {
+				for my $group ( @{$self->{data}->{groups}} ) {
+					$group_res->{$group->{name}} ++;
+				}
+				$cell->{grand_aggregate_result} ++;
+			}
+
+			# TODO: add an "avg" aggregate function? Should be simple.
+
+		} elsif ( $type eq "data" && $cell->{custom_function} ) {
+			# TODO: Custom function support.
+			# We need to pass:
+			# - the current value
+			# - the current aggregate result,
+			# - the current grand result
+			# Do we then allow the custom function to adjust these values?
+		}
+
+	}
+
+}
+
+
+sub render_cell_background {
+
+	my ( $self, $cell, $opt ) = @_;
+
+	unless ( exists $cell->{background} ) {
+		return;
+	}
+
+	my $current_height = $opt->{cell_full_height};
+
+	if ( $cell->{background}->{shape} ) {
+        
+        if ( $cell->{background}->{shape} eq "ellipse" ) {
+            
+            $self->{shape}->fillcolor( $cell->{background}->{colour} );
+            
+            $self->{shape}->ellipse(
+                    $cell->{x_border} + ( $cell->{full_width} / 2 ),	# x centre
+                    $self->{y} + ( $current_height / 2 ),		# y centre
+                    $cell->{full_width} / 2,				# length ( / 2 ... for some reason )
+                    $current_height / 2					# height ( / 2 ... for some reason )
+            );
+            
+            $self->{shape}->fill;
+            
+        } elsif ( $cell->{background}->{shape} eq "box" ) {
+            
+            $self->{shape}->fillcolor( $cell->{background}->{colour} );
+            
+            $self->{shape}->rect(
+                    $cell->{x_border},					# left border
+                    $self->{y},						# bottom border
+                    $cell->{full_width},				# length
+                    $current_height					# height
+            );
+            
+            $self->{shape}->fill;
+    
+        }
+                
+    }
+
+    #
+    # Now render cell background borders
+    #
+    if ( $cell->{background}->{border} ) {
+        
+        # Cell Borders
+        $self->{line}->strokecolor( $cell->{background}->{border} );
+                    
+        # * * * * * * * * * * * * TODO * * * * * * * * * * * *
+        #
+        # Move the regex setuff into setup_cell_definitions()
+        # so we don't have to regex per cell, which is
+        # apparently quite expensive
+        #
+        # * * * * * * * * * * * * TODO * * * * * * * * * * * *
+        
+        # If the 'borders' key does not exist then draw all borders
+        # to support code written before this was added.
+        # A value of 'all' can also be used.
+        if ( ( ! exists $cell->{background}->{borders} ) || ( uc $cell->{background}->{borders} eq 'ALL' ) )
+        {
+            $cell->{background}->{borders} = "tblr";
+        }
+
+        # The 'borders' key looks for the following chars in the string
+        #  t or T - Top Border Line
+        #  b or B - Bottom Border Line
+        #  l or L - Left Border Line
+        #  r or R - Right Border Line
+
+        # Bottom Horz Line
+        my $cell_bb = $cell->{background}->{borders};
+
+        if( $cell_bb =~ /[bB]/ ) {
+            $self->{line}->move( $cell->{x_border}, $self->{y} );
+            $self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} );
+            $self->{line}->stroke;
+        }
+
+        # Right Vert Line
+        if( $cell_bb =~ /[rR]/ ) {
+            $self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} );
+            $self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
+            $self->{line}->stroke;
+        }
+        
+        # Top Horz Line
+        if( $cell_bb =~ /[tT]/ ) {
+            $self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
+            $self->{line}->line( $cell->{x_border}, $self->{y} + $current_height );
+            $self->{line}->stroke;
+        }
+        
+        # Left Vert Line
+        if( $cell_bb =~ /[lL]/ ) {
+            $self->{line}->move( $cell->{x_border}, $self->{y} + $current_height );
+            $self->{line}->line( $cell->{x_border}, $self->{y} );
+            $self->{line}->stroke;
+        }
+        
+    }
+
+}
+
+sub render_cell_barcode {
+
+	my ( $self, $cell, $opt ) = @_;
+
+	# PDF::API2 barcode options
+	#
+	# x, y => center of barcode position
+	# type => 'code128', '2of5int', '3of9', 'ean13',
+	# code => what is written into barcode
+	# extn => barcode extension, where applicable
+	# umzn => upper mending zone (?)
+	# lmzn => lower mending zone (?)
+	# quzn => quiet zone (space between frame and barcode)
+	# spcr => what to put between each char in the text
+	# ofwt => overflow width
+	# fnsz => font size for the text
+	# text => optional text under the barcode
+	# zone => height of the bars
+	# scale=> 0 .. 1
+
+	my $pdf = $self->{pdf};
+
+	my $bcode = $self->get_cell_text($opt->{current_row}, $cell, $cell->{barcode});
+
+	# For EAN-13 barcodes, calculate check digit
+	my $btype = 'xo_ean13';
+
+	if ( $cell->{type} eq 'ean13' )
+	{
+        	return unless eval { require GD::Barcode::EAN13 };
+        	$bcode .= '000000000000';
+        	$bcode  = substr( $bcode, 0, 12 );
+	        $bcode  = GD::Barcode::EAN13::calcEAN13CD($bcode);
+	}
+
+	my %bcode_opt = (
+		-font=>$pdf->corefont('Courier'),
+		-fnsz=>8,
+		-code=>$bcode,
+		-text=>$bcode,
+		-quzn=>2,
+		-umzn=>2,
+		-zone=>exists $cell->{zone} ? $cell->{zone} : 25,
+		-lmzn=>8,
+		-spcr=>' ',
+		-ofwt=>0.1,
+	);
+
+	if( $cell->{type} eq 'code128' )
+	{
+		$btype = 'xo_code128';
+		$bcode_opt{-ean}  = 0;
+		$bcode_opt{-type} = 'a';
+	}
+
+	my $bar   = $pdf->$btype(%bcode_opt);
+	my $scale = exists $cell->{scale} ? $cell->{scale} : 1;
+	my $x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_border};
+	my $y_pos = exists $cell->{y} ? $cell->{y} : $self->{y};
+	my $gfx   = $opt->{page}->gfx;
+	$gfx->formimage($bar, $x_pos, $y_pos, $scale);
+
+}
+
+sub render_cell_image {
+
+	my( $self, $cell, $opt ) = @_;
+
+	my $current_height = $opt->{cell_full_height};
+
+	# *** TODO *** support use of images in memory instead of from files?
+	my $gfx = $opt->{page}->gfx;
+	my $image;
+	my $imgdata = $cell->{image}->{tmp};
+
+	# *** TODO *** Add support for more image types
+	if ( $imgdata->{img_type} eq "PNG" ) {
+		$image = $self->{pdf}->image_png($cell->{image}->{path});
+	} elsif ( $imgdata->{img_type} eq "JPG" ) {
+		$image = $self->{pdf}->image_jpeg($cell->{image}->{path});
+	} else {
+		warn "\n * * * * * * * * * * * * * WARNING * * * * * * * * * * * * *\n";
+		warn " Unknown image type: $imgdata->{img_type}\n";
+		warn " NOT rendering this image.\n";
+		warn " Please add support for PDF::ReportWriter and send patches :)\n\n";
+		warn "\n * * * * * * * * * * * * * WARNING * * * * * * * * * * * * *\n\n";
+	}
+
+	# Relative or absolute positioning is handled here...
+	my $img_x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_border};
+	my $img_y_pos = exists $cell->{y} ? $cell->{y} : $self->{y};
+
+	# Alignment
+	if ( $cell->{align} && ( $cell->{align} eq 'centre' || $cell->{align} eq 'center' ) ) {
+		$img_x_pos += ( ( $cell->{full_width} - $imgdata->{this_img_x} ) / 2 );
+		$img_y_pos += ( ( $current_height - $imgdata->{this_img_y} ) / 2 );
+	} elsif ( $cell->{align} && $cell->{align} eq "right") {
+		$img_x_pos += ( $cell->{full_width} - $imgdata->{this_img_x} ) - $cell->{image}->{buffer};
+		$img_y_pos += ( ( $current_height - $imgdata->{this_img_y} ) / 2 );
+	} else {
+		$img_x_pos += $cell->{image}->{buffer};
+		$img_y_pos += ( ( $current_height - $imgdata->{this_img_y} ) / 2 );
+	};
+
+	#warn 'image: '.$cell->{image}->{path}.' scale_ratio:'. $imgdata->{scale_ratio});
+
+	$gfx->image(
+			$image,					# The image
+			$img_x_pos,				# X
+			$img_y_pos,				# Y
+			$imgdata->{scale_ratio}			# scale
+		   );
+
+}
+
+sub render_cell_text {
+
+	my ( $self, $cell, $opt ) = @_;
+
+	my $row  = $opt->{current_row};
+	my $type = $opt->{row_type};
+
+	# Figure out what we're putting into the current cell and set the font and size
+	# We currently default to Bold if we're doing a header
+	# We also check for an specific font for this field, or fall back on the report default
+
+	my $string;
+	my $font_type = "Roman";
 	
+	if ( $cell->{bold} ) {
+		$font_type = "Bold";
+	}
+	
+	$self->{txt}->font( $self->{fonts}->{ ( $cell->{font} || $self->{default_font} ) }->{$font_type}, $cell->{font_size} );
+
+	if ($type eq 'header') {
+	
+		$string = $cell->{name};
+		
+	} elsif ( $type eq 'data' ) {
+	
+		#$string = $row->[$opt->{cell_counter}];
+		$string = $opt->{current_value};
+
+	} elsif ( $type eq 'group_header' ) {
+
+		# Replaces the `?' char and manages text delimited cells
+		$string = $self->get_cell_text($row, $cell, $cell->{text});
+
+	} elsif ( $type eq "group_footer" ) {
+
+		if ( exists($cell->{aggregate_source}) ) {
+			if ($cell->{text} eq "GrandTotals") {
+				$string = $self->{data}->{fields}[$cell->{aggregate_source}]->{grand_aggregate_result};
+			} else {
+				$string = $self->{data}->{fields}[$cell->{aggregate_source}]->{group_results}->{$cell->{text}};
+			}
+		} else {
+			$string = $cell->{text};
+		}
+		$string =~ s/\?/$row/g; # In the case of a group footer, the $row variable is the group value
+
+	} elsif ( $type =~ m/^page/ ) {
+
+		# page_header or page_footer
+		$string = $cell->{text};
+		$string =~ s/\%PAGE\%/$row->{current_page}/;
+		$string =~ s/\%PAGES\%/$row->{total_pages}/;
+		$string =~ s/\%TIME\%/$row->{current_time}/;
+	}
+
+	if ( $cell->{colour_func} ) {
+		if ( $self->{debug} ) {
+			print "\nRunning colour_func() on data: " . $string . "\n";
+		}
+		$self->{txt}->fillcolor( $cell->{colour_func}($string) || "black" );
+	} else {
+		$self->{txt}->fillcolor( $cell->{colour} || "black" );
+	}
+	
+	# Apply type formatting ( eg currency )
+	if ( $cell->{type} && $cell->{type} =~ /currency/ && $type ne "header" ) {
+		my $decimal_fill = 1;
+		if ($cell->{type} eq "currency:no_fill") {
+			$decimal_fill = 0;
+		}
+		my $dollar_formatter = new Number::Format(
+								thousands_sep	=> ',',
+								decimal_point	=> '.',
+								decimal_fill	=> $decimal_fill,
+								int_curr_symbol	=> 'USD'
+							 );
+		$string = "\$" . $dollar_formatter->format_number($string);
+	} elsif ( $cell->{type} && $cell->{type} eq "thousands_separated" && $type ne "header" ) {
+		my $dollar_formatter = new Number::Format(
+								thousands_sep	=> ',',
+								decimal_point	=> '.',
+								decimal_fill	=> 0,
+								int_curr_symbol	=> 'USD'
+							 );
+		$string = $dollar_formatter->format_number($string);
+	}
+	
+	# Make sure the current string fits inside the current cell
+	while ($self->{txt}->advancewidth($string) > $cell->{text_width}) {
+		chop($string);
+	}
+
+	# Alignment and position
+	my $x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_text};
+	my $y_pos = exists $cell->{y} ? $cell->{y} : $self->{y} + ($cell->{text_whitespace} || 0);
+	my $align = exists $cell->{align} ? substr($cell->{align} || 'left', 0, 1) : 'l';
+
+	#if( $self->{debug} )
+	#{
+	#	print 'Text `', $string, '\' at (', $x_pos, ',' , $y_pos, ') align: '.$cell->{align}, "\n";
+	#}
+
+	if( $align eq 'l' ) {
+
+		# Default alignment if left-aligned
+		$self->{txt}->translate( $x_pos, $y_pos );
+		$self->{txt}->text($string);
+
+	} elsif( $align eq 'c' || $type eq 'header' ) {
+
+		# Calculate the width of the string, and move to the right so there's an
+		# even gap at both sides, and render left-aligned from there
+		my $string_width = $self->{txt}->advancewidth($string);
+		my $x_offset = ( $cell->{text_width} - $string_width ) >> 1;
+		$x_pos += $x_offset;
+		$self->{txt}->translate( $x_pos, $y_pos );
+		$self->{txt}->text($string);
+
+	} elsif ( $align eq 'r') {
+
+		$x_pos += $cell->{text_width};
+		$self->{txt}->translate( $x_pos, $y_pos );
+		$self->{txt}->text_right($string);
+
+	}
+
 }
 
 sub save {
@@ -1081,6 +1423,31 @@ sub save {
 	
 }
 
+#
+# Replaces `?' with current value and handles cells with delimiter and index
+# Returns the final string value
+#
+sub get_cell_text {
+
+	my ( $self, $row, $cell, $text ) = @_;
+
+	my $string = $text || $cell->{text};
+
+	if( $cell->{delimiter} ) {
+	   # This assumes the delim is a non-alpha char like |,~,!, etc...
+	   my $delim = "\\" . $cell->{delimiter}; 
+	   my $row2 = (split /$delim/, $row)[ $cell->{index} ];
+	   $string =~ s/\?/$row2/g;
+	}
+	else {
+	   # In the case of a group header, the $row variable is the group value
+	   #$string = $cell->{text};
+	   $string =~ s/\?/$row/g;
+	}
+
+	return($string);
+}
+
 1;
 
 =head1 NAME
@@ -1104,6 +1471,7 @@ $report = {
   destination        => "/home/dan/my_fantastic_report.pdf",
   paper              => "A4",
   orientation        => "portrait",
+  template           => '/home/dan/my_page_template.pdf',
   font_list          => [ "Times" ],
   default_font       => "Times",
   default_font_size  => "10",
@@ -1294,6 +1662,22 @@ and the x_margin in your report_definition.
 
 =back
 
+=head2 x
+
+=over 4
+
+The x position of the cell, expressed in points, where 1 mm = 72/25.4 points.
+
+=back
+
+=head2 y
+
+=over 4
+
+The y position of the cell, expressed in points, where 1 mm = 72/25.4 points.
+
+=back
+
 =head2 font
 
 =over 4
@@ -1308,6 +1692,14 @@ Only use this setting to override the default.
 =over 4
 
 The font size. Nothing special here...
+
+=back
+
+=head2 bold
+
+=over 4
+
+A boolean flag to indicate whether you want the text rendered in bold or not.
 
 =back
 
@@ -1351,6 +1743,26 @@ A user-defined sub that returns a colour based on the current data ( ie receives
 
 =back
 
+=head2 custom_render_func
+
+=over 4
+
+A user-define sub to replace the built-in text / image rendering functions
+The sub will receive a hash of options:
+
+ {
+   current_row          - the current row of data
+   row_type             - the current row type (data, group_header, ...)
+   current_value        - the current value of this cell
+   cell                 - the cell definition ( get x position and width from this )
+   cell_counter         - position of the current cell in the row ( 0 .. n - 1 )
+   cell_y_border        - the bottom of the cell
+   cell_full_height     - the height of the cell
+   page                 - the current page ( a PDF::API2 page )
+ }
+
+=back
+
 =head2 align
 
 =over 4
@@ -1373,7 +1785,7 @@ out the selected function and store the results ( attached to the cell ) for lat
 =over 4
 
 This key turns on formatting of data.
-The only possible values currrently are 'currency' and 'currency:no_fill', which
+The only possible values currrently are 'currency', 'currency:no_fill' and 'thousands_separated', which
 are achived via Number::Format ( which spews warnings everywhere - they're harmless )
 
 =back
@@ -1428,6 +1840,15 @@ Whether this is set or not, scaling will still occur if the image is too wide fo
 
 You can hard-code a height value if you like. The image will be scaled to the given height value,
 to the extent that it still fits length-wise in the cell.
+
+=back
+
+=head2 buffer
+
+=over 4
+
+A *minimum* white-space buffer ( in points ) to wrap the image in. This defaults to 1, which
+ensures that the image doesn't render over part of the cell borders ( which looks bad ).
 
 =back
 
@@ -1489,6 +1910,47 @@ Upper-case letters will also work.
 
 =back
 
+=head1 BARCODES
+
+You can define barcodes in any cell ( data, or group header / footer ).
+The default barcode type is B<code128>. The available types are B<code128> and
+B<code39>.
+
+The barcode hash has the following keys:
+
+=head2 type
+
+=over 4
+
+Type of the barcode, either B<code128> or B<code39>. Support for other barcode types
+should be fairly simple, but currently is not there.
+
+=back
+
+=head2 zone
+
+=over 4
+
+Regulates the height of the barcode lines.
+
+=back
+
+=head2 x, y
+
+=over 4
+
+As in text cells.
+
+=back
+
+=head2 scale
+
+=over 4
+
+Defines a zoom scale for barcode, where 1.0 means scale 1:1.
+
+=back
+
 =head1 GROUP DEFINITIONS
 
 Grouping is achieved by defining a column in the data array to use as a group value. When a new group
@@ -1513,8 +1975,6 @@ Groups have the following attributes:
 
 The name is used to identify which value to use in rendering aggregate functions ( see aggregate_source, below ).
 Also, a special name, "GrandTotals" will cause PDF::ReportWriter to fetch *Grand* totals instead of group totals.
-This negates the need to have an extra column of data in your data_array with all the same value ... which
-is the only other way I can see of 'cleanly' getting GrandTotal functionality.
 
 =back
 
@@ -1617,6 +2077,17 @@ legal
 =over 4
 
 portrait or landscape
+
+=back
+
+=head2 template
+
+=over 4
+
+Path to a single page PDF file to be used as template for new pages of the report.
+If PDF is multipage, only first page will be extracted and used.
+All content in PDF template will be included in every page of the final report.
+Be sure to avoid overlapping PDF template content and report content.
 
 =back
 
@@ -1819,20 +2290,10 @@ I think you must be mistaken.
 
 =over 4
 
-Unfortunately, printing PDFs via open-source tools sucks big-time.
-Much to my horror, I've uncovered multiple bugs in whatever open-source tool I use to
-view & print the output of PDF::ReportWriter. I've tried gpdf, xpdf, kpdf, evince, poppler.
-The output *looks* correct when you view it, but formatting is messed up badly when printed.
-
-I've filed bug reports. I've waited. I've filed more bug reports. I've waited more.
-Buggy bloody open-source software ... :)
-
-I suggest that if you too want to view AND print PDFs under Linux, that you use Acrobat's
-free ( as in beer ) reader. It just works ... apart from the fact that it doesn't provide
-you with any options when printing. To get around this, use either kprinter ( kde app ) or
-gtklp ( gtk app ). In acroread's print dialog, it will have /usr/bin/lp as the print command.
-Change this to your selected print tool, and you'll get a more friendly printer options dialog,
-where you can do cool things like select a printer :)
+In the last release of PDF::ReportWriter, I complained bitterly about printing PDFs from Linux.
+I am very happy to be able to say that this situation has improved significantly. Using the
+latest versions of evince and poppler ( v0.5.1 ), I am now getting *perfect* results when
+printing. If you are having issues printing, I suggest updating to the above.
 
 =back
 

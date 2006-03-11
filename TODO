@@ -1,21 +1,4 @@
-Things to do for 1.x:
-
-- Allow user-defined functions to draw directly to the PDF::API2 page
-    - pass cell co-ordinates & data ( row or cell data ? )to the function
-    - return value?
-    
-- More buffer options
-    - horizontal buffers between cells
-    - image buffers ( whitespace between image and cell borders )
-
-- Cleaner handling of data ( ie field ) headers
-    We *NEED* do add a field header definition instead of hanging off the data definition
-    This is particularly needed for cooler things like rendering images in the field headers
-
-- GrandTotals group definition needs work
-    For now, automatically set data_column
-    
-Things to do for 2.x:
+* * * * * Things to do for 2.x * * * * * :
 
 - XML report definitions
     I've already had 1 failed attempt at this.
@@ -31,15 +14,55 @@ Things to do for 2.x:
     report definition file, and then load then up when running a report. I'd prefer
     to use XML though.
     
+- Re-arrange cell definitions
+    It would be nice to clean up the definitions somewhat. eg:
+    
+    $self->{data}->{fields} could be expanded to something like:
+    
+    $self->{data}->{field_definitions} = {
+                                            cells           => $array_of_cells, # <== old $self->{data}->{fields}   
+                                            upper_buffer    => $upper_buffer,
+                                            lower_buffer    => $lower_buffer
+                                         };
+    
+    This not only looks cleaner and removes general clutter, but it makes it easier to deal
+    with different objects in a more generic way, which is always good. It's a pitty I didn't
+    do this from the start ...
+    
+- Clean up definitions of buffers
+    Current approach is fragmented. Each cell should have:
+    
+    {
+        internal_buffers => {
+                                upper   => 0,
+                                lower   => 0,
+                                left    => 0,
+                                right   => 0
+                            },
+        external_buffers => {
+                                left    => 0,
+                                lower   => 0
+                            }
+    }
+    
+    internal_buffers should apply to text ( currently text_whitespace )
+    and *maybe* also images ( currently in images->{buffer} )
+    
+    external_buffers should affect the initial cell definitions
 
-Things that should be done:
+- Further optimisation for images:
+    Cache image metadata in a hash with the image path as the key.
+    We current cache this against the actual cell ( cell->{image}->{tmp} ), but this is
+    only useful if the same image is encountered in the same cell, and directly after the
+    last rendering of this image ... ie if another image is rendered in this cell, the image
+    metadata is overwritten and we have to run imgsize() again
+    
+* * * Things that could be done * * * :
 
-- Add more paper definitions
-
-
-
-Things that could be done:
-
+- Optimisation: we currently do a regex for *EACH* field with borders.
+    We should move this into setup_cell_definitions() and store the results.
+    Apparently regex is a little expensive.
+    
 - Support calculating a header's row that contains an unscaled image when determining our $y_needed
     This situation should be quite rare, and it would need a different approach
     We'd have to do a dummy render_row pass on each header, or else break out our calculation into
@@ -56,3 +79,7 @@ Things that could be done:
     This could be a little tricky with page footers, which are processed after the rest of the
     report is rendered. Does anyone actually want this functionality? Personally I have no reason,
     but I've added it as a possibility anyway
+
+- Template (Cosimo)
+    Allow to define a list of templates to be rotated between pages?
+    (for example even/odd pages with different templates)

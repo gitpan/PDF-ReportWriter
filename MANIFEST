@@ -4,4 +4,5 @@ MANIFEST
 Makefile.PL
 TODO
 lib/PDF/ReportWriter.pm
+t/000_load.t
 META.yml                                 Module meta-data (added by MakeMaker)
