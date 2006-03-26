@@ -38,38 +38,164 @@ use constant TRUE	=> 1;
 use constant FALSE	=> 0;
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '1.0';
+	$PDF::ReportWriter::VERSION = '1.2';
 }
 
 sub new {
 		
-	my ( $class, $self ) = @_;
+	my ( $class, $options ) = @_;
 
+	# Create new object
+	my $self = {};
 	bless $self, $class;
 
-	if ( $self->{paper} eq "A4" ) {
+	# Initialize object state
+	$self->parse_options($options);
+
+	return $self;
+}
+
+#
+# render_report( $xml, $data_arrayref )
+#
+# $xml can be either an xml file or any kind of object that
+# supports `load()' and `get_data()'
+#
+# Take report definition, add report data and
+# shake well. Your report is ready.
+#
+sub render_report
+{
+
+	# Use P::R::Report to handle xml report loading
+	require PDF::ReportWriter::Report;
+
+	my ( $self, $xml, $data_records ) = @_;
+	my $report;
+	my $config;
+	my $data;
+
+	# First parameter can be a report xml filename
+	# or PDF::ReportWriter::Report object. Check and load the report profile
+	if( ! $xml ) {
+		die "Specify an xml report file or PDF::ReportWriter::Report object!";
+	}
+
+	# $xml is a filename?
+	if( ! ref $xml ) {
+
+		# Try loading the report definition file
+		unless( $report = PDF::ReportWriter::Report->new({ report => $xml }) ) {
+			# Can't load xml report file
+			die qq(Can't load xml report file $xml);
+		 }
+
+	# $xml is a PDF::ReportWriter::Report or something that can `load()'?
+	} elsif( $xml->can('load') ) {
+
+		$report = $xml;
+	}
+
+	# Try loading the XML report profile and see if something breaks
+	eval {
+		$config = $report->load();
+		#use Data::Dumper;
+		#print Dumper($config);
+	};
+
+	# Report error to user
+	if( $@ )
+	{
+		die qq(Can't load xml report profile from $xml object: $@);
+	}
+
+	# Ok, profile "definition" data structure is our hash
+	# of main report options
+	$self->parse_options( $config->{definition} );
+	
+	# Profile "data" structure is our hash to be passed
+	# render_data() function.
+	$data = $config->{data};
+
+	# Store report object for later use (resave to xml)
+	$self->{__report} = $report;
+
+	# If we already have report data, we are done
+	if( ! defined $data_records ) {
+
+		# Report object's `get_data()' method can be used to populate report data
+		# with name of data source to use
+		if( $report->can('get_data') ) {
+			# XXX Change `detail' in `report', or `main' ??
+			$data_records = $report->get_data('detail');
+		}
+	}
+
+	# "data" hash structure must be filled with real records
+	$data->{data_array} = $data_records;
+
+	# Store "data" section for later use (save to xml)
+	$self->{data} =                            # XXX Remove?
+	$self->{__report}->{data} = $data;
+
+	# Fire!
+	$self->render_data($data);
+
+}
+
+sub report
+{
+	my $self = $_[0];
+	return $self->{__report};
+}
+
+sub parse_options
+{
+	my ( $self, $opt ) = @_;
+
+	# Create a new PDF document if needed
+	$self->{pdf} ||= PDF::API2->new;
+
+	if ( ! defined $opt )
+	{
+		return($self);
+	}
+
+	# Store options in the __report member that we will use
+	# to export to XML format
+	$self->{__report}->{definition} = $opt;
+
+	# XXX
+	# Store some option keys into main object
+	# Now this is necessary for all code to work correctly
+	#
+	for( qw(destination x_margin y_margin debug template) ) {
+		$self->{$_} = $opt->{$_}
+	}
+
+	if ( $opt->{paper} eq "A4" ) {
 	
 		$self->{page_width} = A4_x;
 		$self->{page_height} = A4_y;
 		
-	} elsif ( $self->{paper} eq "Letter" || $self->{paper} eq "letter" ) {
+	} elsif ( $opt->{paper} eq "Letter" || $opt->{paper} eq "letter" ) {
 	
 		$self->{page_width} = letter_x;
 		$self->{page_height} = letter_y;
 		
-	} elsif ( $self->{paper} eq "bsize" || $self->{paper} eq "Bsize" ) {
+	} elsif ( $opt->{paper} eq "bsize" || $opt->{paper} eq "Bsize" ) {
 	
 		$self->{page_width} = bsize_x;
 		$self->{page_height} = bsize_y;
 		
-	} elsif ( $self->{paper} eq "Legal" || $self->{paper} eq "legal" ) {
+	} elsif ( $opt->{paper} eq "Legal" || $opt->{paper} eq "legal" ) {
 	
 		$self->{page_width} = legal_x;
 		$self->{page_height} = legal_y;
 		
 	# Parse user defined format `150 x 120 mm', or `29.7 x 21.0 cm', or `500X300'
 	# Default unit is `mm' unless specified. Accepted units: `mm', `in'
-	} elsif ( $self->{paper} =~ /^\s*([\d\.]+)\s*[xX]\s*([\d\.]+)\s*(\w*)$/ ) {
+	} elsif ( $opt->{paper} =~ /^\s*([\d\.]+)\s*[xX]\s*([\d\.]+)\s*(\w*)$/ ) {
 
 		my $unit = lc($3) || 'mm';
 		$self->{page_width}  = $1;
@@ -84,64 +210,71 @@ sub new {
 			die 'Unsupported measure unit: ' . $unit . "\n";
 		}
 	} else {
-		die "Unsupported paper format: " . $self->{paper} . "\n";
+		die "Unsupported paper format: " . $opt->{paper} . "\n";
 	}
 
 	# Swap width/height in case of landscape orientation
-	if( exists $self->{orientation} && $self->{orientation} ) {
-		if( $self->{orientation} eq 'landscape' ) {
+	if( exists $opt->{orientation} && $opt->{orientation} ) {
+
+		if( $opt->{orientation} eq 'landscape' ) {
 			($self->{page_width},  $self->{page_height}) =
 			($self->{page_height}, $self->{page_width});
-		} elsif( $self->{orientation} ne 'portrait' ) {
-			die 'Unsupported orientation: ' . $self->{orientation} . "\n"; 
+		} elsif( $opt->{orientation} ne 'portrait' ) {
+			die 'Unsupported orientation: ' . $opt->{orientation} . "\n"; 
         	}
 	}
 
-	# Create a new PDF document if needed
-	$self->{pdf} ||= PDF::API2->new;
+	#
+	# Now initialize object
+	#
 
 	# Set some info stuff
 	my $localtime = localtime time;
 
 	$self->{pdf}->info(
-				Author		=> $self->{info}->{Author},
+				Author		=> $opt->{info}->{Author},
 				CreationDate	=> $localtime,
-				Creator		=> "PDF::ReportWriter $PDF::ReportWriter::VERSION",
-				Keywords	=> $self->{info}->{Keywords},
+				# Should we allow a different creator?
+				Creator		=> $opt->{info}->{Creator} || "PDF::ReportWriter $PDF::ReportWriter::VERSION",
+				Keywords	=> $opt->{info}->{Keywords},
 				ModDate		=> $localtime,
-				Subject		=> $self->{info}->{Subject},
-				Title		=> $self->{info}->{Title}
+				Subject		=> $opt->{info}->{Subject},
+				Title		=> $opt->{info}->{Title}
 			  );
-					
+
 	# Add requested fonts
-	for my $font ( @{$self->{font_list}} ) {
+	$opt->{font_list} ||= $opt->{font} || [ 'Helvetica' ];
+
+	for my $font ( @{$opt->{font_list}} ) {
+
 		# Roman fonts are easy
 		$self->{fonts}->{$font}->{Roman} = $self->{pdf}->corefont(			$font,			-encoding => 'latin1');
 		# The rest are f'n ridiculous. Adobe either didn't think about this, or are just stoopid
-		if ($font eq "Courier") {
+		if ($font eq 'Courier') {
 			$self->{fonts}->{$font}->{Bold} = $self->{pdf}->corefont(		"Courier-Bold",		-encoding => 'latin1');
 			$self->{fonts}->{$font}->{Italic} = $self->{pdf}->corefont(		"Courier-Oblique",	-encoding => 'latin1');
 			$self->{fonts}->{$font}->{BoldItalic} = $self->{pdf}->corefont(		"Courier-BoldOblique",	-encoding => 'latin1');
 		}
-		if ($font eq "Helvetica") {
+		if ($font eq 'Helvetica') {
 			$self->{fonts}->{$font}->{Bold} = $self->{pdf}->corefont(		"Helvetica-Bold",	-encoding => 'latin1');
 			$self->{fonts}->{$font}->{Italic} = $self->{pdf}->corefont(		"Helvetica-Oblique",	-encoding => 'latin1');
 			$self->{fonts}->{$font}->{BoldItalic} = $self->{pdf}->corefont(		"Helvetica-BoldOblique",-encoding => 'latin1');
 		}
-		if ($font eq "Times") {
+		if ($font eq 'Times') {
 			$self->{fonts}->{$font}->{Bold} = $self->{pdf}->corefont(		"Times-Bold",		-encoding => 'latin1');
 			$self->{fonts}->{$font}->{Italic} = $self->{pdf}->corefont(		"Times-Italic",		-encoding => 'latin1');
 			$self->{fonts}->{$font}->{BoldItalic} = $self->{pdf}->corefont(		"Times-BoldItalic",	-encoding => 'latin1');
 		}
 	}
-	
+
 	# Default report font size to 12 in case a default hasn't been supplied
-	if ( !$self->{default_font_size} ) {
-		$self->{default_font_size} = 12;
-	}
+	$self->{default_font_size} = $opt->{default_font_size} || 12;
+	$self->{default_font}      = $opt->{default_font}      || 'Helvetica';
 
-	return $self;
+	# Mark date/time of document generation
+	$self->{__generationtime} = $localtime;
 
+	return($self);
 }
 
 sub setup_cell_definitions {
@@ -163,25 +296,18 @@ sub setup_cell_definitions {
 		# The cell's text whitespace ( the minimum distance between the cell border and cell text )
 		# Default to half the font size if not given
 		if ( ! $cell->{text_whitespace} ) {
-			$cell->{text_whitespace} = $cell->{font_size} * 0.5;
+			$cell->{text_whitespace} = $cell->{font_size} >> 1;
 		}
-		
-		# The cell's height
-		if( $cell->{barcode} ) {
-			# TODO: This calculation should be done adding upper mending zone,
-			#       lower mending zone, font size and bars height, but probably
-			#       we don't have them here...
-			$cell->{height} = $cell->{zone} + 25;
-		} else {
-			$cell->{height} = $cell->{text_whitespace} + $cell->{font_size};
-		}
+
+		# Calculate cell height depending on type, etc...
+		$cell->{height} = $self->calculate_cell_height( $cell );
 
 		# The cell's left-hand text position
 		$cell->{x_text} = $x + $cell->{text_whitespace};
 		
 		# The cell's full width ( border to border )
 		$cell->{full_width} = ( $self->{page_width} - ( $self->{x_margin} * 2 ) ) * $cell->{percent} / 100;
-		
+
 		# The cell's maximum width of text
 		$cell->{text_width} = $cell->{full_width} - ( $cell->{text_whitespace} * 2 );
 		
@@ -258,19 +384,19 @@ sub setup_cell_definitions {
 	}
 	
 	# Set up upper_buffer and lower_buffer values on groups
-	if ( $type eq "group" ) {
-		if ( ! exists $group->{$group_type . "_upper_buffer"} ) {
+	if ( $type eq 'group' ) {
+		if ( ! exists $group->{$group_type . '_upper_buffer'} ) {
 			# Default to 0 - legacy behaviour
-			$group->{$group_type . "_upper_buffer"} = 0;
+			$group->{$group_type . '_upper_buffer'} = 0;
 		}
-		if ( ! exists $group->{$group_type . "_lower_buffer"} ) {
+		if ( ! exists $group->{$group_type . '_lower_buffer'} ) {
 			# Default to 0 - legacy behaviour
-			$group->{$group_type . "_lower_buffer"} = 0;
+			$group->{$group_type . '_lower_buffer'} = 0;
 		}
 	}
 	
 	# Set up data-level upper_buffer and lower_buffer values
-	if ( $type eq "data" ) {
+	if ( $type eq 'data' ) {
 		if ( ! exists $self->{data}->{upper_buffer} ) {
 			# Default to 0, which was the previous behaviour
 			$self->{data}->{upper_buffer} = 0;
@@ -282,7 +408,7 @@ sub setup_cell_definitions {
 	}
 	
 	# Set up field_header upper_buffer and lower_buffer values
-	if ( $type eq "field_headers" ) {
+	if ( $type eq 'field_headers' ) {
 		if ( ! exists $self->{data}->{field_headers_upper_buffer} ) {
 			$self->{data}->{field_headers_upper_buffer} = 0;
 		}
@@ -295,9 +421,9 @@ sub render_data {
 	my ( $self, $data ) = @_;
 	
 	$self->{data} = $data;
-		
+
 	$self->{data}->{cell_height} = 0;
-	
+
 	# Complete field definitions ...
 	# ... calculate the position of each cell's borders and text positioning
 	
@@ -324,7 +450,7 @@ sub render_data {
 					bold		=> TRUE,
 					font_size	=> $field->{font_size},
 					text_whitespace	=> $field->{text_whitespace},
-					align		=> "centre",
+					align		=> 'centre',
 					colour		=> $field->{header_colour}
 				};
 			}
@@ -348,41 +474,52 @@ sub render_data {
 							{
 								percent		=> 50,
 								font_size	=> 8,
-								text		=> "Rendered on %TIME%",
-								align		=> "left",
+								text		=> "Rendered on \%TIME\%",
+								align		=> 'left',
 								bold		=> FALSE
 							},
 							{
 								percent		=> 50,
 								font_size	=> 8,
-								text		=> "Page %PAGE% of %PAGES%",
-								align		=> "right",
+								text		=> "Page \%PAGE\% of \%PAGES\%",
+								align		=> 'right',
 								bold		=> FALSE
 							}
 						  ];
-		$self->setup_cell_definitions( $self->{data}->{page}->{footer}, "page_footer" );
+		$self->setup_cell_definitions( $self->{data}->{page}->{footer}, 'page_footer' );
 	}
 	
 	# Groups
 	for my $group ( @{$self->{data}->{groups}} ) {
+
 		for my $group_type ( qw / header footer / ) {
 			if ( $group->{$group_type} ) {
-				$self->setup_cell_definitions( $group->{$group_type}, "group", $group, $group_type );
+				$self->setup_cell_definitions( $group->{$group_type}, 'group', $group, $group_type );
 			}
 		}
 		# Set all group values to a special character so we recognise that we are entering
 		# a new value for each of them ... particularly the GrandTotal group
-		$group->{value} = "!";
-		
+		$group->{value} = '!';
+
 		# Set the data_column of the GrandTotals group so the user doesn't have to specify it
-		if ( $group->{name} eq "GrandTotals" ) {
-			$group->{data_column} = scalar ( @{( $self->{data}->{data_array}[0] )} );
+
+		next unless $group->{name} eq 'GrandTotals';
+
+		# Check that there is at least one record in the data array, or this assignment triggers
+		# an error about undefined ARRAY reference...
+
+		my $data_ref = $self->{data}->{data_array};
+		if (
+			   ref ( $data_ref )      eq 'ARRAY'
+			&& ref ( $data_ref->[0] ) eq 'ARRAY'
+		) {
+			$group->{data_column} = scalar ( @{( $data_ref->[0] )} );
 		}
 	}
-	
+
 	# Create an array for the group header queue ( otherwise new_page() won't work so well )
 	$self->{group_header_queue} = [];
-	
+
 	# Calculate the y space needed for page footers
 	my $size_calculation = $self->calculate_y_needed(
 								{
@@ -602,13 +739,13 @@ sub new_page {
 	
 	# Push new page onto array of pages
 	push @{$self->{pages}}, $page;
-	
+
 	# Render page header if defined
 	if ( $self->{data}->{page}->{header} ) {
 		$self->render_row(
 					$self->{data}->{page}->{header},
 					undef,
-					"page_header",
+					'page_header',
 					$self->{data}->{page_header_max_cell_height},
 					0, # Page headers don't need
 					0  # upper / lower buffers
@@ -616,7 +753,7 @@ sub new_page {
 					# Maybe we should add upper buffers?
 				 );
 	}
-	
+
 	# Renderer any group headers that have been set as 'reprinting_header'
 	# ( but not if the group has the special value ! which means that we haven't started yet,
 	# and also not if we've got group headers already queued )
@@ -686,6 +823,51 @@ sub group_footer {
 	
 }
 
+#
+# Tries to calculate cell height depending on
+# different cell types and properties.
+#
+sub calculate_cell_height {
+
+	my ( $self, $cell ) = @_;
+	my $height = 0;
+
+	# If cell is a barcode, height is given by its "zone" (height of the bars)
+	if( exists $cell->{barcode} ) {
+	
+		# TODO: This calculation should be done adding upper mending zone,
+		#       lower mending zone, font size and bars height, but probably
+		#       we don't have them here...
+		
+		$height = $cell->{zone} + 25;
+
+	} elsif ( exists $cell->{text} ) {
+
+		# This is a text cell. Pay attention to multiline strings
+		my $txt_height = $cell->{font_size};
+
+		# Ignore trailing CR/LF chars
+		if( $cell->{text} =~ /[\r\n][^\s]/o ) {
+
+			# Multiply height of single line x number of lines
+			# FIXME here count of lines is fast but unaccurate
+			#$txt_height *= 1.2;
+			$txt_height *= 1 + ( $cell->{text} =~ tr/\n/\n/ );
+		}
+
+		$height = $cell->{text_whitespace} + $txt_height;
+
+	# Every other cell
+	} else {
+
+		$height = $cell->{text_whitespace} + $cell->{font_size};
+
+	}
+
+	return ( $height );
+
+}
+
 sub calculate_y_needed {
 	
 	my ( $self, $options ) = @_;
@@ -752,18 +934,18 @@ sub calculate_y_needed {
 			if ( $cell->{image}->{height} > 0 ) {
 
 				# The user has defined an image height
-				$imgdata{y_scale_ratio} = ( $cell->{image}->{height} - ( $cell->{image}->{buffer} * 2 ) ) / $imgdata{img_y};
+				$imgdata{y_scale_ratio} = ( $cell->{image}->{height} - ( $cell->{image}->{buffer} << 1 ) ) / $imgdata{img_y};
 
 			} elsif ( $cell->{image}->{scale_to_fit} ) {
 
 				# We're scaling to fit the current cell
-				$imgdata{y_scale_ratio} = ( $current_height - ( $cell->{image}->{buffer} * 2 ) ) / $imgdata{img_y};
+				$imgdata{y_scale_ratio} = ( $current_height - ( $cell->{image}->{buffer} << 1 ) ) / $imgdata{img_y};
 
 			} else {
 
 				# no scaling or hard-coded height defined
-				if ( ( $imgdata{img_y} + $cell->{image}->{buffer} * 2 ) > ( $self->{y} - $self->{page_footer_and_margin} ) ) {
-					$imgdata{y_scale_ratio} = ( $imgdata{img_y} + $cell->{image}->{buffer} * 2 ) / ( $self->{y} - $self->{page_footer_and_margin} );
+				if ( ( $imgdata{img_y} + $cell->{image}->{buffer} << 1 ) > ( $self->{y} - $self->{page_footer_and_margin} ) ) {
+					$imgdata{y_scale_ratio} = ( $imgdata{img_y} + $cell->{image}->{buffer} << 1 ) / ( $self->{y} - $self->{page_footer_and_margin} );
 				} else {
 					$imgdata{y_scale_ratio} = 1;
 				}
@@ -837,7 +1019,7 @@ sub calculate_y_needed {
 			$y_needed += $max_cell_height;
 		}
 	}
-	
+
 	return {
 			current_height	=> $current_height,
 			y_needed	=> $y_needed
@@ -848,7 +1030,7 @@ sub calculate_y_needed {
 sub render_row {
 	
 	my ( $self, $cells, $row, $type, $max_cell_height, $upper_buffer, $lower_buffer ) = @_;
-	
+
 	# $cells	- a hash of cell definitions
 	# $row		- the current row to render
 	# $type		- possible values are:
@@ -893,10 +1075,15 @@ sub render_row {
 	}
 	
 	if ( $type eq "data" && $self->{need_data_header} && ! $self->{data}->{no_field_headers} ) {
+	
+		# If we are in field headers section, leave room as specified by options
+		$self->{y} -= $self->{data}->{field_headers_upper_buffer};
+
+		# Now render field headers row
 		$self->render_row(
 					$self->{data}->{field_headers},
 					0,
-					"header",
+					'header',
 					$self->{data}->{max_field_header_height},
 					$self->{data}->{field_header_upper_buffer},
 					$self->{data}->{field_header_lower_buffer}
@@ -970,7 +1157,7 @@ sub render_cell {
 
 		$self->render_cell_image( $cell, $options );
 
-	} elsif ( $cell->{custom_render_func} ) {
+	} elsif ( exists $cell->{custom_render_func} ) {
 
 		# If a custom rendering function is defined, we pass a hashref of useful stuff
 		# to the function, along with the current page, and then let the function
@@ -1001,17 +1188,43 @@ sub render_cell {
 
 			my $cell_value = $options->{current_value} || 0;
 			my $group_res  = $cell->{group_results} ||= {};
+			my $aggr_func  = $cell->{aggregate_function};
 
-			if ($cell->{aggregate_function} eq "sum") {
-				for my $group ( @{$self->{data}->{groups}} ) {
-					$group_res->{$group->{name}} += $cell_value;
+			if ( $aggr_func ) {
+
+				if ( $aggr_func eq 'sum' ) {
+
+					for my $group ( @{$self->{data}->{groups}} ) {
+						$group_res->{$group->{name}} += $cell_value;
+					}
+					$cell->{grand_aggregate_result} += $cell_value;
+
+				} elsif ( $aggr_func eq 'count' ) {
+
+					for my $group ( @{$self->{data}->{groups}} ) {
+						$group_res->{$group->{name}} ++;
+					}
+					$cell->{grand_aggregate_result} ++;
+
+				} elsif ( $aggr_func eq 'max' ) {
+
+					for my $group ( @{$self->{data}->{groups}} ) {
+						if( $cell_value > $group_res->{$group->{name}} ) {
+							$cell->{grand_aggregate_result} =
+							$group_res->{$group->{name}}    = $cell_value;
+						}
+					}
+
+				} elsif ( $aggr_func eq 'min' ) {
+
+					for my $group ( @{$self->{data}->{groups}} ) {
+						if( $cell_value < $group_res->{$group->{name}} ) {
+							$cell->{grand_aggregate_result} =
+							$group_res->{$group->{name}}    = $cell_value;
+						}
+					}
 				}
-				$cell->{grand_aggregate_result} += $cell_value;
-			} elsif ($cell->{aggregate_function} eq "count") {
-				for my $group ( @{$self->{data}->{groups}} ) {
-					$group_res->{$group->{name}} ++;
-				}
-				$cell->{grand_aggregate_result} ++;
+
 			}
 
 			# TODO: add an "avg" aggregate function? Should be simple.
@@ -1033,107 +1246,107 @@ sub render_cell {
 sub render_cell_background {
 
 	my ( $self, $cell, $opt ) = @_;
-
+	
 	unless ( exists $cell->{background} ) {
 		return;
 	}
-
+	
 	my $current_height = $opt->{cell_full_height};
-
+	
 	if ( $cell->{background}->{shape} ) {
-        
-        if ( $cell->{background}->{shape} eq "ellipse" ) {
-            
-            $self->{shape}->fillcolor( $cell->{background}->{colour} );
-            
-            $self->{shape}->ellipse(
-                    $cell->{x_border} + ( $cell->{full_width} / 2 ),	# x centre
-                    $self->{y} + ( $current_height / 2 ),		# y centre
-                    $cell->{full_width} / 2,				# length ( / 2 ... for some reason )
-                    $current_height / 2					# height ( / 2 ... for some reason )
-            );
-            
-            $self->{shape}->fill;
-            
-        } elsif ( $cell->{background}->{shape} eq "box" ) {
-            
-            $self->{shape}->fillcolor( $cell->{background}->{colour} );
-            
-            $self->{shape}->rect(
-                    $cell->{x_border},					# left border
-                    $self->{y},						# bottom border
-                    $cell->{full_width},				# length
-                    $current_height					# height
-            );
-            
-            $self->{shape}->fill;
-    
-        }
-                
-    }
-
-    #
-    # Now render cell background borders
-    #
-    if ( $cell->{background}->{border} ) {
-        
-        # Cell Borders
-        $self->{line}->strokecolor( $cell->{background}->{border} );
-                    
-        # * * * * * * * * * * * * TODO * * * * * * * * * * * *
-        #
-        # Move the regex setuff into setup_cell_definitions()
-        # so we don't have to regex per cell, which is
-        # apparently quite expensive
-        #
-        # * * * * * * * * * * * * TODO * * * * * * * * * * * *
-        
-        # If the 'borders' key does not exist then draw all borders
-        # to support code written before this was added.
-        # A value of 'all' can also be used.
-        if ( ( ! exists $cell->{background}->{borders} ) || ( uc $cell->{background}->{borders} eq 'ALL' ) )
-        {
-            $cell->{background}->{borders} = "tblr";
-        }
-
-        # The 'borders' key looks for the following chars in the string
-        #  t or T - Top Border Line
-        #  b or B - Bottom Border Line
-        #  l or L - Left Border Line
-        #  r or R - Right Border Line
-
-        # Bottom Horz Line
-        my $cell_bb = $cell->{background}->{borders};
-
-        if( $cell_bb =~ /[bB]/ ) {
-            $self->{line}->move( $cell->{x_border}, $self->{y} );
-            $self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} );
-            $self->{line}->stroke;
-        }
-
-        # Right Vert Line
-        if( $cell_bb =~ /[rR]/ ) {
-            $self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} );
-            $self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
-            $self->{line}->stroke;
-        }
-        
-        # Top Horz Line
-        if( $cell_bb =~ /[tT]/ ) {
-            $self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
-            $self->{line}->line( $cell->{x_border}, $self->{y} + $current_height );
-            $self->{line}->stroke;
-        }
-        
-        # Left Vert Line
-        if( $cell_bb =~ /[lL]/ ) {
-            $self->{line}->move( $cell->{x_border}, $self->{y} + $current_height );
-            $self->{line}->line( $cell->{x_border}, $self->{y} );
-            $self->{line}->stroke;
-        }
-        
-    }
-
+	
+		if ( $cell->{background}->{shape} eq "ellipse" ) {
+			
+			$self->{shape}->fillcolor( $cell->{background}->{colour} );
+			
+			$self->{shape}->ellipse(
+				$cell->{x_border} + ( $cell->{full_width} / 2 ),	# x centre
+				$self->{y} + ( $current_height / 2 ),			# y centre
+				$cell->{full_width} / 2,				# length ( / 2 ... for some reason )
+				$current_height / 2					# height ( / 2 ... for some reason )
+					       );
+			
+			$self->{shape}->fill;
+		
+		} elsif ( $cell->{background}->{shape} eq "box" ) {
+			
+			$self->{shape}->fillcolor( $cell->{background}->{colour} );
+			
+			$self->{shape}->rect(
+				$cell->{x_border},					# left border
+				$self->{y},						# bottom border
+				$cell->{full_width},					# length
+				$current_height						# height
+					    );
+			
+			$self->{shape}->fill;
+			
+		}
+		
+	}
+	
+	#
+	# Now render cell background borders
+	#
+	if ( $cell->{background}->{border} ) {
+		
+		# Cell Borders
+		$self->{line}->strokecolor( $cell->{background}->{border} );
+		
+		# * * * * * * * * * * * * TODO * * * * * * * * * * * *
+		#
+		# Move the regex setuff into setup_cell_definitions()
+		# so we don't have to regex per cell, which is
+		# apparently quite expensive
+		#
+		# * * * * * * * * * * * * TODO * * * * * * * * * * * *
+		
+		# If the 'borders' key does not exist then draw all borders
+		# to support code written before this was added.
+		# A value of 'all' can also be used.
+		if ( ( ! exists $cell->{background}->{borders} ) || ( uc $cell->{background}->{borders} eq 'ALL' ) )
+		{
+			$cell->{background}->{borders} = "tblr";
+		}
+		
+		# The 'borders' key looks for the following chars in the string
+		#  t or T - Top Border Line
+		#  b or B - Bottom Border Line
+		#  l or L - Left Border Line
+		#  r or R - Right Border Line
+		
+		# Bottom Horz Line
+		my $cell_bb = $cell->{background}->{borders};
+		
+		if( $cell_bb =~ /[bB]/ ) {
+			$self->{line}->move( $cell->{x_border}, $self->{y} );
+			$self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} );
+			$self->{line}->stroke;
+		}
+		
+		# Right Vert Line
+		if( $cell_bb =~ /[rR]/ ) {
+			$self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} );
+			$self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
+			$self->{line}->stroke;
+		}
+		
+		# Top Horz Line
+		if( $cell_bb =~ /[tT]/ ) {
+			$self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
+			$self->{line}->line( $cell->{x_border}, $self->{y} + $current_height );
+			$self->{line}->stroke;
+		}
+		
+		# Left Vert Line
+		if( $cell_bb =~ /[lL]/ ) {
+			$self->{line}->move( $cell->{x_border}, $self->{y} + $current_height );
+			$self->{line}->line( $cell->{x_border}, $self->{y} );
+			$self->{line}->stroke;
+		}
+		
+	}
+	
 }
 
 sub render_cell_barcode {
@@ -1168,7 +1381,7 @@ sub render_cell_barcode {
         	return unless eval { require GD::Barcode::EAN13 };
         	$bcode .= '000000000000';
         	$bcode  = substr( $bcode, 0, 12 );
-	        $bcode  = GD::Barcode::EAN13::calcEAN13CD($bcode);
+	        $bcode .= GD::Barcode::EAN13::calcEAN13CD($bcode);
 	}
 
 	my %bcode_opt = (
@@ -1188,7 +1401,11 @@ sub render_cell_barcode {
 	{
 		$btype = 'xo_code128';
 		$bcode_opt{-ean}  = 0;
-		$bcode_opt{-type} = 'a';
+		# TODO Don't know what type to use here.
+		#   `a' does not seem to handle lowercase chars.
+		#   `c' is a mess.
+		#   `b' seems the better...
+		$bcode_opt{-type} = 'b';
 	}
 
 	my $bar   = $pdf->$btype(%bcode_opt);
@@ -1205,23 +1422,40 @@ sub render_cell_image {
 	my( $self, $cell, $opt ) = @_;
 
 	my $current_height = $opt->{cell_full_height};
-
-	# *** TODO *** support use of images in memory instead of from files?
+	
 	my $gfx = $opt->{page}->gfx;
 	my $image;
 	my $imgdata = $cell->{image}->{tmp};
-
-	# *** TODO *** Add support for more image types
+	
+	# *** TODO ***
+	# Add support for GD::Image images?
+	# PDF::API2 supports using them directly.
+	# We need another key - shouldn't re-use $cell->{image}->{path}
+	# We also shouldn't run imgsize() on it, so we have to figure out
+	# another way of getting the image size.
+	# I haven't use GD before, but I've noted stuff here for people
+	# who want GD::Image support ...
+	
 	if ( $imgdata->{img_type} eq "PNG" ) {
-		$image = $self->{pdf}->image_png($cell->{image}->{path});
+		$image = $self->{pdf}->image_png( $cell->{image}->{path} );
 	} elsif ( $imgdata->{img_type} eq "JPG" ) {
-		$image = $self->{pdf}->image_jpeg($cell->{image}->{path});
+		$image = $self->{pdf}->image_jpeg( $cell->{image}->{path} );
+	} elsif ( $imgdata->{img_type} eq "TIF" ) {
+		$image = $self->{pdf}->image_tiff( $cell->{image}->{path} );
+	} elsif ( $imgdata->{img_type} eq "GIF" ) {
+		$image = $self->{pdf}->image_gif( $cell->{image}->{path} ) ;
+	} elsif ( $imgdata->{img_type} eq "PNM" ) {
+		$image = $self->{pdf}->image_pnm( $cell->{image}->{path} ) ;
 	} else {
 		warn "\n * * * * * * * * * * * * * WARNING * * * * * * * * * * * * *\n";
 		warn " Unknown image type: $imgdata->{img_type}\n";
 		warn " NOT rendering this image.\n";
 		warn " Please add support for PDF::ReportWriter and send patches :)\n\n";
 		warn "\n * * * * * * * * * * * * * WARNING * * * * * * * * * * * * *\n\n";
+
+		# Return now or errors are going to happen when putting an invalid image
+		# object on PDF page gfx context
+		return();
 	}
 
 	# Relative or absolute positioning is handled here...
@@ -1232,7 +1466,7 @@ sub render_cell_image {
 	if ( $cell->{align} && ( $cell->{align} eq 'centre' || $cell->{align} eq 'center' ) ) {
 		$img_x_pos += ( ( $cell->{full_width} - $imgdata->{this_img_x} ) / 2 );
 		$img_y_pos += ( ( $current_height - $imgdata->{this_img_y} ) / 2 );
-	} elsif ( $cell->{align} && $cell->{align} eq "right") {
+	} elsif ( $cell->{align} && $cell->{align} eq 'right') {
 		$img_x_pos += ( $cell->{full_width} - $imgdata->{this_img_x} ) - $cell->{image}->{buffer};
 		$img_y_pos += ( ( $current_height - $imgdata->{this_img_y} ) / 2 );
 	} else {
@@ -1268,7 +1502,9 @@ sub render_cell_text {
 	if ( $cell->{bold} ) {
 		$font_type = "Bold";
 	}
-	
+
+	#warn '    $cell->{font} = ' . $cell->{font} || $self->{default_font};
+
 	$self->{txt}->font( $self->{fonts}->{ ( $cell->{font} || $self->{default_font} ) }->{$font_type}, $cell->{font_size} );
 
 	if ($type eq 'header') {
@@ -1285,26 +1521,26 @@ sub render_cell_text {
 		# Replaces the `?' char and manages text delimited cells
 		$string = $self->get_cell_text($row, $cell, $cell->{text});
 
-	} elsif ( $type eq "group_footer" ) {
+	} elsif ( $type eq 'group_footer' ) {
 
-		if ( exists($cell->{aggregate_source}) ) {
-			if ($cell->{text} eq "GrandTotals") {
-				$string = $self->{data}->{fields}[$cell->{aggregate_source}]->{grand_aggregate_result};
+		if ( exists $cell->{aggregate_source} ) {
+			my $aggr_field = $self->{data}->{fields}->[ $cell->{aggregate_source} ];
+			if ($cell->{text} eq 'GrandTotals') {
+				$string = $aggr_field->{grand_aggregate_result};
 			} else {
-				$string = $self->{data}->{fields}[$cell->{aggregate_source}]->{group_results}->{$cell->{text}};
+				$string = $aggr_field->{group_results}->{$cell->{text}};
 			}
 		} else {
 			$string = $cell->{text};
 		}
+
 		$string =~ s/\?/$row/g; # In the case of a group footer, the $row variable is the group value
+		#$string = $self->get_cell_text($row, $cell, $string);
 
 	} elsif ( $type =~ m/^page/ ) {
 
 		# page_header or page_footer
-		$string = $cell->{text};
-		$string =~ s/\%PAGE\%/$row->{current_page}/;
-		$string =~ s/\%PAGES\%/$row->{total_pages}/;
-		$string =~ s/\%TIME\%/$row->{current_time}/;
+		$string = $self->get_cell_text($row, $cell, $cell->{text});
 	}
 
 	if ( $cell->{colour_func} ) {
@@ -1317,78 +1553,132 @@ sub render_cell_text {
 	}
 	
 	# Apply type formatting ( eg currency )
-	if ( $cell->{type} && $cell->{type} =~ /currency/ && $type ne "header" ) {
-		my $decimal_fill = 1;
-		if ($cell->{type} eq "currency:no_fill") {
-			$decimal_fill = 0;
+	if( $type ne 'header' && $cell->{type} ) {
+
+		if ( $cell->{type} =~ /currency/ ) {
+
+			my $decimal_fill = 1;
+			if ($cell->{type} eq "currency:no_fill") {
+				$decimal_fill = 0;
+			}
+			my $dollar_formatter = new Number::Format(
+									thousands_sep	=> ',',
+									decimal_point	=> '.',
+									decimal_fill	=> $decimal_fill,
+									int_curr_symbol	=> 'USD'
+								 );
+			$string = "\$" . $dollar_formatter->format_number($string);
+
+		} elsif ( $cell->{type} eq 'thousands_separated' ) {
+
+			my $formatter = new Number::Format(
+									thousands_sep	=> ',',
+									decimal_point	=> '.',
+									decimal_fill	=> 0,
+									int_curr_symbol	=> 'USD'
+								 );
+			$string = $formatter->format_number($string);
+
+		# TODO Better develop custom cell type?
+		} elsif ( $cell->{type} =~ /^custom:(\.+)/ ) {
+
+			# TODO How do we specify the custom formatter object?
+			my $formatter_obj = $1->new();
+			$string = $formatter_obj->format({ cell => $cell, options => $opt, string => $string });
+
 		}
-		my $dollar_formatter = new Number::Format(
-								thousands_sep	=> ',',
-								decimal_point	=> '.',
-								decimal_fill	=> $decimal_fill,
-								int_curr_symbol	=> 'USD'
-							 );
-		$string = "\$" . $dollar_formatter->format_number($string);
-	} elsif ( $cell->{type} && $cell->{type} eq "thousands_separated" && $type ne "header" ) {
-		my $dollar_formatter = new Number::Format(
-								thousands_sep	=> ',',
-								decimal_point	=> '.',
-								decimal_fill	=> 0,
-								int_curr_symbol	=> 'USD'
-							 );
-		$string = $dollar_formatter->format_number($string);
+		
 	}
-	
-	# Make sure the current string fits inside the current cell
-	while ($self->{txt}->advancewidth($string) > $cell->{text_width}) {
-		chop($string);
-	}
+
+	#warn '    $cell->{text_width} = '.$cell->{text_width};
+	#warn '    $txt_advancewidth  = '.$self->{txt}->advancewidth($string);
+	#warn '    $cell->{text}       = '.$string;
 
 	# Alignment and position
 	my $x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_text};
 	my $y_pos = exists $cell->{y} ? $cell->{y} : $self->{y} + ($cell->{text_whitespace} || 0);
 	my $align = exists $cell->{align} ? substr($cell->{align} || 'left', 0, 1) : 'l';
 
-	#if( $self->{debug} )
-	#{
-	#	print 'Text `', $string, '\' at (', $x_pos, ',' , $y_pos, ') align: '.$cell->{align}, "\n";
-	#}
+	# If cell is absolutely positioned (y), we should avoid automatic page break.
+	# This is intuitive to do, I think...
+	my $cell_abs_pos = exists $cell->{y};
 
-	if( $align eq 'l' ) {
+	#
+	# Handle multiline text
+	#
+	
+	# Whatever the format (Dos/Unix/Mac/Amiga), this should correctly split rows
+	my @text_rows = split /[\r\n]+\s*/ => $string;
+	
+	# Now line height is defined as 100% of font size 
+	# TODO Find a better way to calculate this (external property?)
+	my $line_height = $cell->{font_size};
 
-		# Default alignment if left-aligned
-		$self->{txt}->translate( $x_pos, $y_pos );
-		$self->{txt}->text($string);
+	for $string (@text_rows) {
 
-	} elsif( $align eq 'c' || $type eq 'header' ) {
+		next unless $string;			# Skip empty lines
+		next if $string =~ /^\s+/;		# Skip strings with only whitespace
 
-		# Calculate the width of the string, and move to the right so there's an
-		# even gap at both sides, and render left-aligned from there
-		my $string_width = $self->{txt}->advancewidth($string);
-		my $x_offset = ( $cell->{text_width} - $string_width ) >> 1;
-		$x_pos += $x_offset;
-		$self->{txt}->translate( $x_pos, $y_pos );
-		$self->{txt}->text($string);
+		# Make sure the current string fits inside the current cell
+		# Beware: if text_width < 0, there is something wrong with `percent' attribute.
+		# Maybe it hasn't been set...
 
-	} elsif ( $align eq 'r') {
+		if( $cell->{text_width} > 0 ) {
+			while ( $string && $self->{txt}->advancewidth($string) > $cell->{text_width}) {
+				chop($string);
+			}
+		}
 
-		$x_pos += $cell->{text_width};
-		$self->{txt}->translate( $x_pos, $y_pos );
-		$self->{txt}->text_right($string);
+		#if( $self->{debug} )
+		#{
+		#	print 'Text `', $string, '\' at (', $x_pos, ',' , $y_pos, ') align: '.$cell->{align}, "\n";
+		#}
+
+		if( $align eq 'l' ) {
+
+			# Default alignment if left-aligned
+			$self->{txt}->translate( $x_pos, $y_pos );
+			$self->{txt}->text($string);
+
+		} elsif( $align eq 'c' || $type eq 'header' ) {
+
+			# Calculate the width of the string, and move to the right so there's an
+			# even gap at both sides, and render left-aligned from there
+			my $string_width = $self->{txt}->advancewidth($string);
+			my $x_offset = ( $cell->{text_width} - $string_width ) >> 1;
+			$x_pos += $x_offset;
+			$self->{txt}->translate( $x_pos, $y_pos );
+			$self->{txt}->text($string);
+
+		} elsif ( $align eq 'r') {
+
+			$x_pos += $cell->{text_width};
+			$self->{txt}->translate( $x_pos, $y_pos );
+			$self->{txt}->text_right($string);
+
+		}
+
+		# XXX Empirical result? Is there a text line_height information?
+		$y_pos -= $line_height;
+
+		# Run empty on page space? Make a page break
+		if( $cell_abs_pos && $y_pos < $line_height ) {
+			$self->new_page();
+		}
 
 	}
 
 }
 
-sub save {
-	
-	my $self = shift;
-	
+sub render_footers
+{
+	my $self = $_[0];
+
 	my $total_pages = scalar@{$self->{pages}};
-	
+
 	# We first loop through all the pages and add footers to them
 	for my $this_page_no ( 0 .. $total_pages - 1 ) {
-		
+
 		$self->{txt} = $self->{pages}[$this_page_no]->text;
 		my $localtime = localtime time;
 		
@@ -1410,42 +1700,211 @@ sub save {
 						total_pages	=> $total_pages,
 						current_time	=> $localtime
 					},
-					"page_footer",
+					'page_footer',
 					$self->{page_footer_max_cell_height},
 					0,
 					0
 				 );
 		
 	}
+}
+
+sub stringify
+{
+	my $self = shift;
+	my $pdf_stream;
+
+	$self->render_footers();
 	
-	$self->{pdf}->saveas($self->{destination});
+	$pdf_stream = $self->{pdf}->stringify;
+	$self->{pdf}->end;
+
+	return($pdf_stream);
+}
+
+sub save {
+	
+	my $self = shift;
+	my $ok   = 0;
+
+	$self->render_footers();
+	
+	$ok = $self->{pdf}->saveas($self->{destination});
 	$self->{pdf}->end();
-	
+
+	# TODO Check result of PDF::API2 saveas() and end() methods?
+	return(1);
+}
+
+sub saveas {
+	my $self = shift;
+	my $file = shift;
+	$self->{destination} = $file;
+	$self->save();
+}
+
+#
+# Spool a report to CUPS print queue for direct printing
+#
+# $self->print({
+#     tempdir => '/tmp',
+#     command => '/usr/bin/lpr.cups',
+#     printer => 'myprinter',
+# });
+#
+sub print {
+
+	use File::Temp ();
+
+	my $self = shift;
+	my $opt  = shift;
+	my @cups_locations = qw(/usr/bin/lpr.cups /usr/bin/lpr-cups /usr/bin/lpr);
+
+	# Apply option defaults
+	my $unlink_spool = exists $opt->{unlink} ? $opt->{unlink} : 1;
+	$opt->{tempdir} ||= '/tmp';
+
+	# Try to find a suitable cups command
+	if( ! $opt->{command} )
+	{
+		my $cmd;
+		do {
+			last unless @cups_locations;
+			$cmd = shift @cups_locations;
+		} until ( -e $cmd && -x $cmd );
+
+		if( ! $cmd )
+		{
+			warn 'Can\'t find a lpr/cups shell command to run!';
+			return undef;
+		}
+
+		# Ok, found a cups/lpr command
+		$opt->{command} = $cmd;
+	}
+
+	my $cups_cmd = $opt->{command};
+	my $ok = my $err = 0;
+	my $printer;
+
+	# Add printer queue name if supplied
+	if( $printer = $opt->{printer} )
+	{
+		$cups_cmd .= " -P $printer";
+	}
+
+	# Generate a temporary file to store pdf content
+	my($temp_file, $temp_name) = File::Temp::tempfile('reportXXXXXXX', DIR=>$opt->{tempdir}, SUFFIX=>'.pdf');
+
+	# Print all pdf stream to file
+	if( $temp_file )
+	{
+        	binmode $temp_file;
+		$ok   = print $temp_file $self->stringify();
+		$ok &&= close $temp_file;
+
+		# Now spool this temp file
+		if( $ok )
+		{
+			$cups_cmd .= ' ' . $temp_name;
+
+			# Run spool command and get exit status
+			my $exit = system($cups_cmd) && 0xFF;
+			$ok = ($exit == 0);
+
+			if( ! $ok )
+			{
+				# ERROR 1: FAILED spooling of report with CUPS
+				$err = 1;
+			}
+
+			# OK: Report spooled correctly to CUPS printer
+
+		}
+		else
+		{
+			# ERROR 2: FAILED creation of report spool file
+			$err = 2;
+		}
+
+		unlink $temp_name if $unlink_spool;
+	}
+	else
+	{
+		# ERROR 3: FAILED opening of a temporary spool file
+		$err = 3;
+	}
+
+	return($err);
 }
 
 #
 # Replaces `?' with current value and handles cells with delimiter and index
 # Returns the final string value
 #
+
+{
+	# Datasource strings regular expression
+	# Example: `%customers[2,5]%'
+	my $ds_regex = qr/%(\w+)\[(\d+),(\d+)\]%/o;
+
 sub get_cell_text {
 
 	my ( $self, $row, $cell, $text ) = @_;
 
 	my $string = $text || $cell->{text};
 
-	if( $cell->{delimiter} ) {
-	   # This assumes the delim is a non-alpha char like |,~,!, etc...
-	   my $delim = "\\" . $cell->{delimiter}; 
-	   my $row2 = (split /$delim/, $row)[ $cell->{index} ];
-	   $string =~ s/\?/$row2/g;
-	}
-	else {
-	   # In the case of a group header, the $row variable is the group value
-	   #$string = $cell->{text};
-	   $string =~ s/\?/$row/g;
+	# If string begins and ends with `%', this is a reference to an external datasource.
+	# Example: `%mydata[m,n]%' means lookup the <datasource> tag with name `mydata',
+	# try to load the records and return the n-th column of the m-th record.
+	# Also multiple data strings are allowed in a text cell, as in
+	# `Dear %customers[0,1]% %customers[0,2]%'
+
+	while( $string =~ $ds_regex ) {
+
+		# Lookup from external datasource
+		my $ds_name = $1;
+		my $n_rec   = $2;
+		my $n_col   = $3;
+		my $ds_value= '';
+
+		# TODO Here we must cache the results of `get_data' by
+		#      data source name or we could reload many times
+		#      the same data...
+		if( my $data = $self->report->get_data($ds_name) ) {
+			$ds_value = $data->[$n_rec]->[$n_col];
+		}
+
+		$string =~ s/$ds_regex/$ds_value/;
 	}
 
+	# In case row is a scalar, we are into group cell,
+	# not data cell rendering.
+	if ( ref $row eq 'HASH' ) {
+		$string =~ s/\%PAGE\%/$row->{current_page}/;
+		$string =~ s/\%PAGES\%/$row->{total_pages}/;
+	} else {
+		# In case of group headers/footers, $row is a single scalar
+		$string =~ s/\?/$row/g;
+	}
+
+	# __generationtime member is set at object initialization (parse_options)
+	$string =~ s/\%TIME\%/$$self{__generationtime}/;
+
+	if( $cell->{delimiter} ) {
+		# This assumes the delim is a non-alpha char like |,~,!, etc...
+		my $delim = "\\" . $cell->{delimiter}; 
+		my $row2 = (split /$delim/, $row)[ $cell->{index} ];
+		$string =~ s/\?/$row2/g;
+	}
+	#else {
+	#	# In the case of a group header, the $row variable is the group value
+	#	$string =~ s/\?/$row/g;
+	#}
+
 	return($string);
+}
+
 }
 
 1;
@@ -2262,6 +2721,59 @@ with different data and definitions.
 
 =back
 
+=head2 render_report ( xml [, data ] )
+
+=over 4
+
+Should be used when dealing with xml format reports. One call to rule them all.
+The first argument can be either an xml filename or a C<PDF::ReportWriter::Report>
+object. The 2nd argument is the real data to be used in your report.
+Example of usage for first case (xml file):
+
+	my $rw = PDF::ReportWriter->new();
+	my @data = (
+		[2004, 'Income',               1000.000 ],
+		[2004, 'Expenses',              500.000 ],
+		[2005, 'Income',               5000.000 ],
+		[2005, 'Expenses',              600.000 ],
+		[2006, 'Income (projection)',  9999.000 ],
+		[2006, 'Expenses (projection),  900.000 ],
+	);
+	$rw->render_report('./account.xml', \@data);
+	
+	# Save to disk
+	$rw->save();
+
+	# or get a scalar with all pdf document
+	my $pdf_doc = $rw->stringify();
+
+For an example of xml report file, take a look at C<examples>
+folder in the PDF::ReportWriter distribution or to
+C<PDF::ReportWriter::Examples> documentation.
+
+The alternative form allows for more flexibility. You can pass a
+C<PDF::ReportWriter::Report> basic object with a report profile
+already loaded. Example:
+
+	my $rw = PDF::ReportWriter->new();
+	my $rp = PDF::ReportWriter::Report->new('./account.xml');
+	# ... Assume @data as before ...
+	$rw->render_report($rp, \@data);
+	$rw->save();
+
+If you desire the maximum flexibility, you can also pass B<any> object
+in the world that supports C<load()> and C<get_data()> methods, where
+C<load()> should return a B<complete report profile> (TO BE CONTINUED),
+and C<get_data()> should return an arrayref with all actual records that
+you want your report to include, as returned by DBI's C<selectall_arrayref()>
+method.
+
+As with C<render_data>, you can call C<render_report> as many times as you want.
+The PDF file will grow as necessary. There is only one problem in rendering
+of header sections when re-calling C<render_report>.
+
+=back
+
 =head2 save
 
 =over 4
@@ -2270,11 +2782,71 @@ Saves the pdf file ( in the location specified in the report definition ).
 
 =back
 
+=head2 saveas ( newfile )
+
+=over 4
+
+Saves the pdf file in the location specified by C<newfile> string and
+overrides default report C<destination> property.
+
+=back
+
+=head2 stringify
+
+=over 4
+
+Returns the pdf document as a scalar.
+
+=back
+
+=head2 print ( options )
+
+=over 4
+
+Tries to print the report pdf file to a CUPS print queue. For now, it only works
+with CUPS, though you can supply several options to drive the print job as you like.
+Allowed options, to be specified as an hash reference, with their default values,
+are the following:
+
+=over 4
+
+=item command
+
+The command to be launched to spool the pdf report (C</usr/bin/lpr.cups>).
+
+=item printer
+
+Name of CUPS printer to print to (no default). If not specified,
+takes your system default printer.
+
+=item tempdir
+
+Temporary directory where to put the spool file (C</tmp>).
+
+=item unlink
+
+If true, deletes the temporary spool file (C<true>).
+
+=back
+
+=back
+
+=head1 EXAMPLES
+
+=over 4
+
+Check out the C<examples> folder in the main PDF::ReportWriter distribution that
+contains a simple demonstration of results that can be achieved.
+
+=back
+
 =head1 AUTHORS
 
 =over 4
 
 Dan <dan@entropy.homelinux.org>
+
+Cosimo Streppone <cosimo@cpan.org>
 
 =back
 

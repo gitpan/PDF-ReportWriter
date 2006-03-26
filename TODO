@@ -1,18 +1,13 @@
-* * * * * Things to do for 2.x * * * * * :
 
-- XML report definitions
-    I've already had 1 failed attempt at this.
-    Who knows how to handle XML from Perl? Not me, that's for sure :)
-    Should we support 1.x report definitions?
-    If not, we should at *least* provide an upgrade path, like a
-    report definition ==> XML function.
+- PDF indexing thingy support
+    We could put things like group headers into the index
+    This would make it easier to navigate a large report
+    Does PDF::API2 support this? Investigate ...
     
-- Perl Gtk2 - based report builder
-    How hard would this be, really?
-    It would be nice if we could get the XML stuff above working as well,
-    but I suppose if we can't, we can always just dump perl data structures to a
-    report definition file, and then load then up when running a report. I'd prefer
-    to use XML though.
+- Perl Gtk2 - based report builder ( medium-term )
+    Now that Cosimo has added XML support, it's time to add a GUI report builder
+    At the moment, a simple expandable-tree type of GUI would be good.
+    I don't think I'm up to a WYSIWYG editor at present. We'll see
     
 - Re-arrange cell definitions
     It would be nice to clean up the definitions somewhat. eg:
@@ -28,6 +23,8 @@
     This not only looks cleaner and removes general clutter, but it makes it easier to deal
     with different objects in a more generic way, which is always good. It's a pitty I didn't
     do this from the start ...
+    
+    Would this just break things for no reason other than cleanliness?
     
 - Clean up definitions of buffers
     Current approach is fragmented. Each cell should have:
@@ -80,6 +77,27 @@
     report is rendered. Does anyone actually want this functionality? Personally I have no reason,
     but I've added it as a possibility anyway
 
-- Template (Cosimo)
+- Allow different templates (Cosimo)
     Allow to define a list of templates to be rotated between pages?
     (for example even/odd pages with different templates)
+
+- Hyperlinks on images and text (Cosimo)
+
+- Phantom group fields (Cosimo)
+    Now if we define groups on data fields, we must include those fields in the
+    main detail table. Can we define a way to make those grouped fields disappear
+    avoiding their rendering?
+
+- Custom cell formatting (Cosimo)
+    Document the new cell type "custom:{class}" with its API.
+    Should work as follows:
+
+       my $obj = {class}->new();
+       $string = $obj->format($cell, $options, $string);
+
+- Text line height (Cosimo)
+    When handling multi-line text, is there some property that tells us how much
+    to go down in the page? Now font line height is empirically calculated as:
+        
+        line_height = font_size * 1.2
+

@@ -1,5 +1,32 @@
 CHANGELOG
 
+Version 1.2, released 26-Mar-2006
+    Patches from Cosimo Streppone:
+        Added "one-step" loading and rendering of reports from external XML files.
+            XML::Simple now is a pre-requisite for PDF::ReportWriter.
+        Added data sources definition in the xml report, with a basic DBI data-source
+            plugin already available. Invented a new syntax for text cells to refer to
+            external data sources (`%datasource_name[record_no,column_no]%').
+        Added an examples folder with some basic cool xml reports.
+        Added print() method to directly print pdf reports to CUPS print queues.
+        Added saveas() method just like PDF::API2 class.
+        Added `max', `min' aggregate functions.
+        Added basic handling of multi-line text on text cells, with proper
+            calculation of cell height.
+        Added ReportWriter->stringify() method that returns all the pdf document
+            in a scalar, useful when you want to stream your document to a browser.
+        Refactored the cell text processing code in new `get_cell_text()' method.
+            Now every part of report should have macro expansion (%PAGE%, ...).
+        Now the `field_headers_upper_buffer' works as advertised.
+        Now document info->Creator field can be overridden.
+        [EXPERIMENTAL] New cell type "custom:xxxx" to allow arbitrary formatting.
+        Various fixes with barcode cells rendering (code 39 and 128).
+        Minor optimizations around the group aggregate calculation.
+        Documentation updates.
+    Many thanks Comiso :)
+    
+    Added support for image types: tiff, gif, pnm
+
 Version 1.0, released 11-Mar-2006
     Patches from Cosimo Streppone:
         Added rendering of absolute-positioned cells with x,y properties.
