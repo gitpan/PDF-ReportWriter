@@ -1,7 +1,21 @@
 CHANGELOG
 
+Version 1.3, released 31-Mar-2006
+    Patches from Cosimo Streppone <cosimo@cpan.org>:
+        Fixed out-of-memory errors when defining cells that exceed page height.
+        Many fixes about text and barcode cells alignment of content even when
+            using absolute x, y coordinates.
+        Refactored cell font object retrieving code, to be used both in barcode
+            and text cells.
+        Added and documented more barcode properties (upper/lower mending zones,
+            custom font/font_size)
+        Added current_page() method to retrieve PDF::API2::Page underlying object
+            where we are rendering content. One can choose to draw directly on that.
+        Added another example of barcode document (PDF as a barcode label)
+        Added page duplication example (cool!)
+  
 Version 1.2, released 26-Mar-2006
-    Patches from Cosimo Streppone:
+    Patches from Cosimo Streppone <cosimo@cpan.org>:
         Added "one-step" loading and rendering of reports from external XML files.
             XML::Simple now is a pre-requisite for PDF::ReportWriter.
         Added data sources definition in the xml report, with a basic DBI data-source
@@ -23,7 +37,7 @@ Version 1.2, released 26-Mar-2006
         Various fixes with barcode cells rendering (code 39 and 128).
         Minor optimizations around the group aggregate calculation.
         Documentation updates.
-    Many thanks Comiso :)
+    Many thanks Cosimo :)
     
     Added support for image types: tiff, gif, pnm
 

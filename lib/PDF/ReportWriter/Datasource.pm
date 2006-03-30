@@ -3,10 +3,9 @@
 # PDF::ReportWriter::Datasource
 #
 # See COPYRIGHT file for full license
-#
 # See 'perldoc PDF::ReportWriter::Datasource' for documentation
 #
-# $Id: Datasource.pm,v 1.2 2006/03/21 09:35:03 cosimo Exp $
+# $Id: Datasource.pm 13 2006-03-27 16:48:02Z cosimo $
 
 package PDF::ReportWriter::Datasource;
 $VERSION = '1.00';

@@ -3,6 +3,9 @@ COPYRIGHT
 examples/barcode/barcode.pdf
 examples/barcode/barcode.pl
 examples/barcode/barcode.xml
+examples/barcode2/barcode2.pdf
+examples/barcode2/barcode2.pl
+examples/barcode2/barcode2.xml
 examples/basic/basic.jpg
 examples/basic/basic.pdf
 examples/basic/basic.pl
@@ -20,6 +23,9 @@ examples/layout/layout.pdf
 examples/layout/layout.pl
 examples/layout/layout.png
 examples/layout/layout.xml
+examples/pagedup/pagedup.pdf
+examples/pagedup/pagedup.pl
+examples/pagedup/pagedup.xml
 examples/simplegroup/simplegroup.pdf
 examples/simplegroup/simplegroup.pl
 examples/simplegroup/simplegroup.png

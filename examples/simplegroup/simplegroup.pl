@@ -4,7 +4,7 @@
 # Cosimo Streppone <cosimo@cpan.org>
 # 2006-03-14
 #
-# $Id: simplegroup.pl,v 1.1 2006/03/14 17:14:24 cosimo Exp $
+# $Id: simplegroup.pl 16 2006-03-27 16:51:09Z cosimo $
 
 use strict;
 use PDF::ReportWriter;

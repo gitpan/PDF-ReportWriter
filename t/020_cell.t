@@ -2,7 +2,7 @@
 # Test of PDF::ReportWriter functions about cells
 # Cosimo Streppone 2006-03-16
 #
-# $Id: 020_cell.t,v 1.1 2006/03/20 09:42:02 cosimo Exp $
+# $Id: 020_cell.t 15 2006-03-27 16:50:11Z cosimo $
 
 use strict;
 use warnings;

@@ -3,10 +3,9 @@
 # PDF::ReportWriter::Datasource::DBI
 #
 # See COPYRIGHT file for full license
-#
 # See 'perldoc PDF::ReportWriter::Datasource' for documentation
 #
-# $Id: DBI.pm,v 1.2 2006/03/21 09:35:03 cosimo Exp $
+# $Id: DBI.pm 14 2006-03-27 16:48:43Z cosimo $
 
 package PDF::ReportWriter::Datasource::DBI;
 $VERSION = '1.0';

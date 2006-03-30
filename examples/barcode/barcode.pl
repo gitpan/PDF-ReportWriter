@@ -3,7 +3,7 @@
 # Cosimo Streppone <cosimo@cpan.org>
 # 2006-03-15
 #
-# $Id: barcode.pl,v 1.1 2006/03/16 11:11:06 cosimo Exp $
+# $Id: barcode.pl 16 2006-03-27 16:51:09Z cosimo $
 
 use strict;
 use PDF::ReportWriter;

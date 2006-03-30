@@ -38,7 +38,7 @@ use constant TRUE	=> 1;
 use constant FALSE	=> 0;
 
 BEGIN {
-	$PDF::ReportWriter::VERSION = '1.2';
+	$PDF::ReportWriter::VERSION = '1.3';
 }
 
 sub new {
@@ -141,6 +141,24 @@ sub render_report
 	# Fire!
 	$self->render_data($data);
 
+}
+
+#
+# Returns the current page object (PDF::API2::Page) we are working on
+#
+sub current_page
+{
+	my $self = $_[0];
+	my $page_list = $self->{pages};
+
+	if( ref $page_list eq 'ARRAY' && scalar @$page_list )
+	{
+		return $page_list->[ $#$page_list ];
+	}
+	else
+	{
+		return undef;
+	}
 }
 
 sub report
@@ -419,7 +437,7 @@ sub setup_cell_definitions {
 sub render_data {
 	
 	my ( $self, $data ) = @_;
-	
+
 	$self->{data} = $data;
 
 	$self->{data}->{cell_height} = 0;
@@ -433,10 +451,10 @@ sub render_data {
 							border	=> "grey"
 					      };
 	}
-	
+
 	# Normal cells
 	$self->setup_cell_definitions( $self->{data}->{fields}, "data" );
-	
+
 	# Field headers
 	if ( ! $self->{data}->{no_field_headers} ) {
 		# Construct the field_headers definition if required ...
@@ -534,7 +552,7 @@ sub render_data {
 	if ( ! $self->{pages} ) {
 		$self->new_page;
 	}
-	
+
 	$self->{txt}->fillcolor("black");
 	
 	my $row_counter = 0;
@@ -615,7 +633,7 @@ sub render_data {
 	
 	# Move down some more at the end of this pass
 	$self->{y} -= $self->{data}->{max_cell_height};
-	
+
 }
 
 sub assemble_group_header_queue {
@@ -803,7 +821,7 @@ sub group_footer {
 		+ $group->{footer_upper_buffer}
 		+ $group->{footer_lower_buffer};
 	
-	if ($self->{y} - $y_needed < 0) {
+	if ($y_needed <= $self->{page_height} && $self->{y} - $y_needed < 0) {
 		$self->new_page;
 	}
 
@@ -871,7 +889,7 @@ sub calculate_cell_height {
 sub calculate_y_needed {
 	
 	my ( $self, $options ) = @_;
-	
+
 	# Unpack options hash
 	my $cells		= $options->{cells};
 	my $max_cell_height	= $options->{max_cell_height};
@@ -1028,7 +1046,7 @@ sub calculate_y_needed {
 }
 
 sub render_row {
-	
+
 	my ( $self, $cells, $row, $type, $max_cell_height, $upper_buffer, $lower_buffer ) = @_;
 
 	# $cells	- a hash of cell definitions
@@ -1062,8 +1080,16 @@ sub render_row {
 
 	# Page Footer / New Page / Page Header if necessary, otherwise move down by $current_height
 	# ( But don't force a new page if we're rendering a page footer )
-	
-	if ( $type ne "page_footer" && $self->{y} - ( $y_needed + $self->{page_footer_and_margin} ) < 0 ) {
+
+	# Check that total y space needed does not exceed page size.
+	# In that case we cannot keep adding more pages, which causes
+	# horrible out of memory errors
+	$y_needed += $self->{page_footer_and_margin};
+
+	if(    $type ne 'page_footer'
+	    && $y_needed <= $self->{page_height}
+	    && $self->{y} - $y_needed < 0 )
+	{
 		$self->new_page;
 	}
 
@@ -1246,53 +1272,53 @@ sub render_cell {
 sub render_cell_background {
 
 	my ( $self, $cell, $opt ) = @_;
-	
+
 	unless ( exists $cell->{background} ) {
 		return;
 	}
-	
+
 	my $current_height = $opt->{cell_full_height};
-	
+
 	if ( $cell->{background}->{shape} ) {
-	
+        
 		if ( $cell->{background}->{shape} eq "ellipse" ) {
-			
+            
 			$self->{shape}->fillcolor( $cell->{background}->{colour} );
-			
+            
 			$self->{shape}->ellipse(
-				$cell->{x_border} + ( $cell->{full_width} / 2 ),	# x centre
-				$self->{y} + ( $current_height / 2 ),			# y centre
-				$cell->{full_width} / 2,				# length ( / 2 ... for some reason )
-				$current_height / 2					# height ( / 2 ... for some reason )
-					       );
-			
+				$cell->{x_border} + ( $cell->{full_width} >> 1 ),	# x centre
+				$self->{y} + ( $current_height >> 1 ),			# y centre
+				$cell->{full_width} >> 1,				# length ( / 2 ... for some reason )
+				$current_height >> 1					# height ( / 2 ... for some reason )
+			);
+            
 			$self->{shape}->fill;
-		
+           
 		} elsif ( $cell->{background}->{shape} eq "box" ) {
-			
+            
 			$self->{shape}->fillcolor( $cell->{background}->{colour} );
-			
+           
 			$self->{shape}->rect(
 				$cell->{x_border},					# left border
 				$self->{y},						# bottom border
-				$cell->{full_width},					# length
-				$current_height						# height
-					    );
-			
+				$cell->{full_width},				# length
+				$current_height					# height
+			);
+            
 			$self->{shape}->fill;
-			
+    
 		}
-		
+                
 	}
-	
+
 	#
 	# Now render cell background borders
 	#
 	if ( $cell->{background}->{border} ) {
-		
+
 		# Cell Borders
 		$self->{line}->strokecolor( $cell->{background}->{border} );
-		
+			    
 		# * * * * * * * * * * * * TODO * * * * * * * * * * * *
 		#
 		# Move the regex setuff into setup_cell_definitions()
@@ -1300,7 +1326,7 @@ sub render_cell_background {
 		# apparently quite expensive
 		#
 		# * * * * * * * * * * * * TODO * * * * * * * * * * * *
-		
+
 		# If the 'borders' key does not exist then draw all borders
 		# to support code written before this was added.
 		# A value of 'all' can also be used.
@@ -1308,45 +1334,45 @@ sub render_cell_background {
 		{
 			$cell->{background}->{borders} = "tblr";
 		}
-		
+
 		# The 'borders' key looks for the following chars in the string
 		#  t or T - Top Border Line
 		#  b or B - Bottom Border Line
 		#  l or L - Left Border Line
 		#  r or R - Right Border Line
-		
+
 		# Bottom Horz Line
 		my $cell_bb = $cell->{background}->{borders};
-		
+
 		if( $cell_bb =~ /[bB]/ ) {
 			$self->{line}->move( $cell->{x_border}, $self->{y} );
 			$self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} );
 			$self->{line}->stroke;
 		}
-		
+
 		# Right Vert Line
 		if( $cell_bb =~ /[rR]/ ) {
 			$self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} );
 			$self->{line}->line( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
 			$self->{line}->stroke;
 		}
-		
+
 		# Top Horz Line
 		if( $cell_bb =~ /[tT]/ ) {
 			$self->{line}->move( $cell->{x_border} + $cell->{full_width}, $self->{y} + $current_height );
 			$self->{line}->line( $cell->{x_border}, $self->{y} + $current_height );
 			$self->{line}->stroke;
 		}
-		
+
 		# Left Vert Line
 		if( $cell_bb =~ /[lL]/ ) {
 			$self->{line}->move( $cell->{x_border}, $self->{y} + $current_height );
 			$self->{line}->line( $cell->{x_border}, $self->{y} );
 			$self->{line}->stroke;
 		}
-		
+
 	}
-	
+
 }
 
 sub render_cell_barcode {
@@ -1370,36 +1396,35 @@ sub render_cell_barcode {
 	# scale=> 0 .. 1
 
 	my $pdf = $self->{pdf};
-
 	my $bcode = $self->get_cell_text($opt->{current_row}, $cell, $cell->{barcode});
+	my $btype = 'xo_code128';
 
 	# For EAN-13 barcodes, calculate check digit
-	my $btype = 'xo_ean13';
-
 	if ( $cell->{type} eq 'ean13' )
 	{
         	return unless eval { require GD::Barcode::EAN13 };
         	$bcode .= '000000000000';
         	$bcode  = substr( $bcode, 0, 12 );
 	        $bcode .= GD::Barcode::EAN13::calcEAN13CD($bcode);
+		$btype = 'xo_ean13';
 	}
 
+	# Define font type
 	my %bcode_opt = (
-		-font=>$pdf->corefont('Courier'),
-		-fnsz=>8,
+		-font=>$self->get_cell_font($cell),
+		-fnsz=>$cell->{font_size} || $self->{default_font_size},
 		-code=>$bcode,
 		-text=>$bcode,
-		-quzn=>2,
-		-umzn=>2,
-		-zone=>exists $cell->{zone} ? $cell->{zone} : 25,
-		-lmzn=>8,
+		-quzn=>exists $cell->{quiet_zone}         ? $cell->{quiet_zone}         :  2,
+		-umzn=>exists $cell->{upper_mending_zone} ? $cell->{upper_mending_zone} :  4,
+		-zone=>exists $cell->{zone}               ? $cell->{zone}               : 25,
+		-lmzn=>exists $cell->{lower_mending_zone} ? $cell->{lower_mending_zone} : 12,
 		-spcr=>' ',
 		-ofwt=>0.1,
 	);
 
 	if( $cell->{type} eq 'code128' )
 	{
-		$btype = 'xo_code128';
 		$bcode_opt{-ean}  = 0;
 		# TODO Don't know what type to use here.
 		#   `a' does not seem to handle lowercase chars.
@@ -1412,7 +1437,18 @@ sub render_cell_barcode {
 	my $scale = exists $cell->{scale} ? $cell->{scale} : 1;
 	my $x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_border};
 	my $y_pos = exists $cell->{y} ? $cell->{y} : $self->{y};
-	my $gfx   = $opt->{page}->gfx;
+
+	# Manage alignment (left, right or center)
+	my $align = substr lc $cell->{align} || 'l', 0, 1;
+	my $bar_width = $bar->width * $scale;
+	if( $align eq 'r' ) {
+		$x_pos -= $bar_width;
+	} elsif( $align eq 'c' ) {
+		$x_pos -= $bar_width >> 1;
+	}
+
+	# Position barcode with correct x,y and scale
+	my $gfx = $opt->{page}->gfx;
 	$gfx->formimage($bar, $x_pos, $y_pos, $scale);
 
 }
@@ -1422,7 +1458,6 @@ sub render_cell_image {
 	my( $self, $cell, $opt ) = @_;
 
 	my $current_height = $opt->{cell_full_height};
-	
 	my $gfx = $opt->{page}->gfx;
 	my $image;
 	my $imgdata = $cell->{image}->{tmp};
@@ -1435,17 +1470,17 @@ sub render_cell_image {
 	# another way of getting the image size.
 	# I haven't use GD before, but I've noted stuff here for people
 	# who want GD::Image support ...
-	
+
 	if ( $imgdata->{img_type} eq "PNG" ) {
-		$image = $self->{pdf}->image_png( $cell->{image}->{path} );
-	} elsif ( $imgdata->{img_type} eq "JPG" ) {
-		$image = $self->{pdf}->image_jpeg( $cell->{image}->{path} );
-	} elsif ( $imgdata->{img_type} eq "TIF" ) {
-		$image = $self->{pdf}->image_tiff( $cell->{image}->{path} );
-	} elsif ( $imgdata->{img_type} eq "GIF" ) {
-		$image = $self->{pdf}->image_gif( $cell->{image}->{path} ) ;
-	} elsif ( $imgdata->{img_type} eq "PNM" ) {
-		$image = $self->{pdf}->image_pnm( $cell->{image}->{path} ) ;
+		$image = $self->{pdf}->image_png($cell->{image}->{path});
+ 	} elsif ( $imgdata->{img_type} eq "JPG" ) {
+ 		$image = $self->{pdf}->image_jpeg( $cell->{image}->{path} );
+ 	} elsif ( $imgdata->{img_type} eq "TIF" ) {
+ 		$image = $self->{pdf}->image_tiff( $cell->{image}->{path} );
+ 	} elsif ( $imgdata->{img_type} eq "GIF" ) {
+ 		$image = $self->{pdf}->image_gif( $cell->{image}->{path} ) ;
+ 	} elsif ( $imgdata->{img_type} eq "PNM" ) {
+ 		$image = $self->{pdf}->image_pnm( $cell->{image}->{path} ) ;
 	} else {
 		warn "\n * * * * * * * * * * * * * WARNING * * * * * * * * * * * * *\n";
 		warn " Unknown image type: $imgdata->{img_type}\n";
@@ -1485,6 +1520,14 @@ sub render_cell_image {
 
 }
 
+sub get_cell_font
+{
+	my($self, $cell) = @_;
+	my $font_type = ( exists $cell->{bold} && $cell->{bold} ) ? 'Bold' : 'Roman';
+	my $font_name = $cell->{font} || $self->{default_font};
+	return $self->{fonts}->{$font_name}->{$font_type};
+}
+
 sub render_cell_text {
 
 	my ( $self, $cell, $opt ) = @_;
@@ -1497,15 +1540,8 @@ sub render_cell_text {
 	# We also check for an specific font for this field, or fall back on the report default
 
 	my $string;
-	my $font_type = "Roman";
-	
-	if ( $cell->{bold} ) {
-		$font_type = "Bold";
-	}
 
-	#warn '    $cell->{font} = ' . $cell->{font} || $self->{default_font};
-
-	$self->{txt}->font( $self->{fonts}->{ ( $cell->{font} || $self->{default_font} ) }->{$font_type}, $cell->{font_size} );
+	$self->{txt}->font( $self->get_cell_font($cell), $cell->{font_size} );
 
 	if ($type eq 'header') {
 	
@@ -1590,10 +1626,6 @@ sub render_cell_text {
 		
 	}
 
-	#warn '    $cell->{text_width} = '.$cell->{text_width};
-	#warn '    $txt_advancewidth  = '.$self->{txt}->advancewidth($string);
-	#warn '    $cell->{text}       = '.$string;
-
 	# Alignment and position
 	my $x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_text};
 	my $y_pos = exists $cell->{y} ? $cell->{y} : $self->{y} + ($cell->{text_whitespace} || 0);
@@ -1645,14 +1677,21 @@ sub render_cell_text {
 			# Calculate the width of the string, and move to the right so there's an
 			# even gap at both sides, and render left-aligned from there
 			my $string_width = $self->{txt}->advancewidth($string);
-			my $x_offset = ( $cell->{text_width} - $string_width ) >> 1;
+			my $x_offset = $cell_abs_pos
+				? - ($string_width >> 1)
+				: ($cell->{text_width} - $string_width) >> 1;
 			$x_pos += $x_offset;
 			$self->{txt}->translate( $x_pos, $y_pos );
 			$self->{txt}->text($string);
-
+			
 		} elsif ( $align eq 'r') {
 
-			$x_pos += $cell->{text_width};
+			if( $cell_abs_pos ) {
+				$x_pos -= $self->{txt}->advancewidth($string) >> 1;
+			} else {
+				$x_pos += $cell->{text_width};
+			}
+
 			$self->{txt}->translate( $x_pos, $y_pos );
 			$self->{txt}->text_right($string);
 
@@ -1673,6 +1712,12 @@ sub render_cell_text {
 sub render_footers
 {
 	my $self = $_[0];
+
+	# If no pages defined, there are no footers to render
+	if( ! exists $self->{pages} || ! ref $self->{pages} )
+	{
+		return;
+	}
 
 	my $total_pages = scalar@{$self->{pages}};
 
@@ -2377,36 +2422,52 @@ B<code39>.
 
 The barcode hash has the following keys:
 
-=head2 type
-
 =over 4
+
+=item type
 
 Type of the barcode, either B<code128> or B<code39>. Support for other barcode types
-should be fairly simple, but currently is not there.
+should be fairly simple, but currently is not there. No default. 
 
-=back
-
-=head2 zone
-
-=over 4
-
-Regulates the height of the barcode lines.
-
-=back
-
-=head2 x, y
-
-=over 4
+=item x, y
 
 As in text cells.
 
-=back
-
-=head2 scale
-
-=over 4
+=item scale
 
 Defines a zoom scale for barcode, where 1.0 means scale 1:1.
+
+=item align
+
+Defines the alignment of the barcode object. Should be C<left> (or C<l>),
+C<center> (or C<c>), or C<right> (or C<r>). This should work as expected either
+if you specify absolute x,y coordinates or not.
+
+=item font_size
+
+Defines the font size of the clear text that appears below the bars.
+If not present, takes report C<default_font_size> property.
+
+=item font
+
+Defines the font face of the clear text that appears below the bars.
+If not present, takes report C<default_font> property.
+
+=item zone
+
+Regulates the height of the barcode lines.
+
+=item upper_mending_zone, lower_mending_zone
+
+Space below and above barcode bars? I tried experimenting a bit, but
+didn't properly understand what C<upper_mending_zone> does.
+C<lower_mending_zone> is the height of the barcode extensions toward the
+lower end, where clear text is printed.
+I don't know how to explain these better...
+
+=item quiet_zone
+
+Empty space around the barcode bars? Try to experiment yourself.
 
 =back
 
