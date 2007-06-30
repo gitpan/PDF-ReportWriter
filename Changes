@@ -1,5 +1,41 @@
 CHANGELOG
 
+Version 1.4, released 01-Jul-2007
+
+    Patches from Cosimo Streppone <cosimo@cpan.org>:
+        Improved management of image files according to underlying PDF::API2
+            installed version. If you specify an image type that PDF::API2
+            can't handle, the image is skipped and a warning is produced.
+        Fixed and documented custom cell type mechanism, and added automatic
+            require of formatter classes.
+    
+    Patches Patrik Eschle <patrik.eschle@spectraseis.com>:
+        Added support for code39 barcodes
+    
+    Fixed rendering of the character 0 by itself
+    Fixed setup of group footer definition if aggregate source is cell 0
+    Fixed bad calling of calculate_y_needed
+        ( was passing 'fields' in the options hash instead of 'cells' )
+    Added support for multi-line text in data ( ie cells can expand vertically )
+    Fixed printing of data headers if there are no groups defined
+    Fixed x_pos of text in render_cell_text() for multiline text
+    Moved execution of custom render functions to happen before rendering all other cell types
+    Added return hash for custom render functions, with support for passing stuff back for traditional rendering
+    Added fetch_group_results() function ( use this with custom_render_func )
+    Fixed splitting of columns inside a delimited group value for group headers ( sorry Bill )
+    Fixed printing of group headers if we have to reset them while we're calculating whether we need a new page
+    INCOMPATIBLE CHANGE:
+        colour_func() functions now get passed ( $value, $row ) instead of just $row
+    Removed dependancy on Number::Format
+    Fixed rendering of footers if reprinting_header is on
+    Fixed corruption of group aggregate values in some cases
+    Added text wrapping option to cells for text that is wider than the current width
+    Added option to cells to strip line breaks from text
+    Fixed bug in calculate_y_space for non-data cells ( eg where $cell->{text} is rendered )
+    Create a new page before the 1st invocation of calculate_y_space so we have a text object
+    Improved numeric and currency formatting - see the cell's new 'format' key
+    Fixed rendering of cell where text begins with a space ( bad optimisation )
+    
 Version 1.3, released 31-Mar-2006
     Patches from Cosimo Streppone <cosimo@cpan.org>:
         Fixed out-of-memory errors when defining cells that exceed page height.

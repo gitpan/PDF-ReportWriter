@@ -18,98 +18,98 @@ use XML::Simple;
 use PDF::ReportWriter::Datasource;
 
 BEGIN {
-	$PDF::ReportWriter::Report::VERSION = '1.0';
+        $PDF::ReportWriter::Report::VERSION = '1.0';
 }
 
 sub new {
-
-	my ( $class, $opt ) = @_;
-	$class = ref($class) || $class;
-
-	# Make $opt a hashref if it isn't already
-	# Passing a string with report filename should work.
-	if( ! ref $opt ) {
-		if( ( defined $opt ) && ( $opt ne '' ) ) {
-			$opt = { report => $opt };
-		} else {
-			$opt = {};
-		}
-	}
-
-	my $self = { %$opt };
-	my $file;
-
-	if( exists $self->{report} ) {
-		$file = $self->{report};
-	}
-
-	if( defined $file && ! -e $file )
-	{
-		#croak qq(Can't find $file xml report file);
-		return(undef);
-	}
-
-	bless $self, $class;
+        
+        my ( $class, $opt ) = @_;
+        $class = ref($class) || $class;
+        
+        # Make $opt a hashref if it isn't already
+        # Passing a string with report filename should work.
+        if( ! ref $opt ) {
+                if( ( defined $opt ) && ( $opt ne '' ) ) {
+                        $opt = { report => $opt };
+                } else {
+                        $opt = {};
+                }
+        }
+        
+        my $self = { %$opt };
+        my $file;
+        
+        if( exists $self->{report} ) {
+                $file = $self->{report};
+        }
+        
+        if( defined $file && ! -e $file )
+        {
+                return(undef);
+        }
+        
+        bless $self, $class;
+        
 }
 
 #
 # Returns current filename of xml report
 #
 sub file {
-	my $self = $_[0];
-	return $self->{report};
+        my $self = $_[0];
+        return $self->{report};
 }
 
 #
 # Loads xml report definition
 #
 sub load {
-	my $self = shift;
-	my $file = shift || $self->file();
-	my $cfg  = $self->config();
-
-	# Return already loaded configuration instead of
-	# reloading from scratch
-	return $cfg if $cfg;
-
-	my $xml = XML::Simple->new(
-		
-		# Don't create group name keys
-		#
-		# FIXME Is there a way to avoid `name' hash keys creation,
-		#       without issuing warnings about nonexistent `_' key?
-
-		KeyAttr => {
-			group => '_',
-			field => '_',
-		},
-		
-		GroupTags => {
-			header => 'cell',
-			footer => 'cell',
-			groups => 'group',
-			fields => 'field',
-		},
-
-		Variables => $self->get_macros(),
-
-	);
-
-	$cfg = $xml->XMLin( $file );
-
-	if( ! ref( $cfg ) )
-	{
-		warn qq(Can't read from xml file $file);
-		return ( undef );
-	}
-
-	$self->_adjust_struct( $cfg );
-
-	# Store configuration inside object
-	$self->config( $cfg );
-
-	return ( $cfg );
-
+        my $self = shift;
+        my $file = shift || $self->file();
+        my $cfg  = $self->config();
+        
+        # Return already loaded configuration instead of
+        # reloading from scratch
+        return $cfg if $cfg;
+        
+        my $xml = XML::Simple->new(
+                
+                # Don't create group name keys
+                #
+                # FIXME Is there a way to avoid `name' hash keys creation,
+                #       without issuing warnings about nonexistent `_' key?
+                
+                KeyAttr => {
+                        group => '_',
+                        field => '_',
+                },
+                
+                GroupTags => {
+                        header => 'cell',
+                        footer => 'cell',
+                        groups => 'group',
+                        fields => 'field',
+                },
+                
+                Variables => $self->get_macros(),
+                
+        );
+        
+        $cfg = $xml->XMLin( $file );
+        
+        if( ! ref( $cfg ) )
+        {
+                warn qq(Can't read from xml file $file);
+                return ( undef );
+        }
+        
+        $self->_adjust_struct( $cfg );
+        
+        # Store configuration inside object
+        $self->config( $cfg );
+        
+        return ( $cfg );
+        
 }
 
 #
@@ -118,65 +118,65 @@ sub load {
 #
 sub data_sources
 {
-	my $self = $_[0];
-	my $ds   = $self->config->{data}->{datasource};
-	my %ds;
-
-	if ( ref $ds eq 'HASH' ) {
-		$ds = [ $ds ];
-	}
-
-	for( @$ds )
-	{
-		$ds{$_->{name}} = $_;
-	}
-
-	return(\%ds);
+        my $self = $_[0];
+        my $ds   = $self->config->{data}->{datasource};
+        my %ds;
+        
+        if ( ref $ds eq 'HASH' ) {
+                $ds = [ $ds ];
+        }
+        
+        for( @$ds )
+        {
+                $ds{$_->{name}} = $_;
+        }
+        
+        return(\%ds);
 }
 
 #
 # Report's get_data() passes the work to PDF::ReportWriter::Datasource objects
 #
 {
-	# Main cache for datasources actual data, to avoid
-	# useless repeated calls to get_data()
-	my %ds_cache;
-
-sub get_data
-{
-	my $self   = $_[0];
-	my $dsname = $_[1] || 'detail';
-
-	# Check if cached data already exists
-	# Here we assume that while report is generating, data does not change
-	if( exists $ds_cache{$dsname} )
-	{
-		return $ds_cache{$dsname};
-	}
-
-	# Get all available d.s.
-	my $ds = $self->data_sources();
-
-	# Datasource does not exists, return blank data
-	if( ! exists $ds->{$dsname} )
-	{
-		#warn 'Data source '.$dsname.' does not exist';
-		return ();
-	}
-
-	# Try to create a P::R::Datasource object
-	my $ds_obj = PDF::ReportWriter::Datasource->new($ds->{$dsname});
-
-	if( ! defined $ds_obj )
-	{
-		warn 'Data source '.$dsname.' not available!';
-		return ();
-	}
-
-	# Ok, datasource object loaded, call get_data() on it
-	return ( $ds_cache{$dsname} = $ds_obj->get_data($self) );
-}
-
+        # Main cache for datasources actual data, to avoid
+        # useless repeated calls to get_data()
+        my %ds_cache;
+        
+        sub get_data
+        {
+                my $self   = $_[0];
+                my $dsname = $_[1] || 'detail';
+                
+                # Check if cached data already exists
+                # Here we assume that while report is generating, data does not change
+                if( exists $ds_cache{$dsname} )
+                {
+                        return $ds_cache{$dsname};
+                }
+                
+                # Get all available d.s.
+                my $ds = $self->data_sources();
+                
+                # Datasource does not exists, return blank data
+                if( ! exists $ds->{$dsname} )
+                {
+                        #warn 'Data source '.$dsname.' does not exist';
+                        return ();
+                }
+                
+                # Try to create a P::R::Datasource object
+                my $ds_obj = PDF::ReportWriter::Datasource->new($ds->{$dsname});
+                
+                if( ! defined $ds_obj )
+                {
+                        warn 'Data source '.$dsname.' not available!';
+                        return ();
+                }
+                
+                # Ok, datasource object loaded, call get_data() on it
+                return ( $ds_cache{$dsname} = $ds_obj->get_data($self) );
+        }
+        
 }
 
 #
@@ -185,21 +185,21 @@ sub get_data
 # before loading.
 #
 sub get_macros {
-	return undef;
+        return undef;
 }
 
 #
 # Returns (or modifies) current report configuration (profile)
 #
 sub config {
-	my $self = shift;
-
-	# If passed a parameter, change config member to that
-	if( @_ ) {
-		$self->{_config} = $_[0];
-	}
-
-	return ( $self->{_config} );
+        my $self = shift;
+        
+        # If passed a parameter, change config member to that
+        if( @_ ) {
+                $self->{_config} = $_[0];
+        }
+        
+        return ( $self->{_config} );
 }
 
 #
@@ -213,58 +213,58 @@ sub config {
 #         all the different cases (HASH, ARRAY, ...)
 #
 sub _adjust_struct {
-
-	my ( $self, $config ) = @_;
-	my $data = $config->{data};
-	local $_;
-
-	# Force `fields' to be an array even with 1 element
-	if( ref ( $data->{fields} ) eq 'HASH' ) {
-		$data->{fields} = [ $data->{fields} ];
-	}
-
-	if( ref ( $data->{groups} ) eq 'HASH' ) {
-		$data->{groups} = [ $data->{groups} ];
-	}
-
-	# Now for `groups' section
-	for(@{ $data->{groups} }) {
-
-		# Remove empty header/footer sections
-		# Force header/footer to array even if they have 1 element
-		if( ref ( $_->{header} ) eq 'HASH' ) {
-			if( keys %{$_->{header}} ) {
-				$_->{header} = [ $_->{header} ];
-			} else {
-				delete $_->{header};
-			}
-		}
-
-		if( ref ( $_->{footer} ) eq 'HASH' ) {
-			if( keys %{$_->{footer}} ) {
-				$_->{footer} = [ $_->{footer} ];
-			} else {
-				delete $_->{footer};
-			}
-		}
-	}
-
-	# Same as above for `page' structure
-	my $page = $data->{page};
-	if( ref ( $page->{header} ) eq 'HASH' ) {
-		$page->{header} = [ $page->{header} ];
-	}
-	if( ref ( $page->{footer} ) eq 'HASH' ) {
-		$page->{footer} = [ $page->{footer} ];
-	}
-
-	# Same as above for font structure
-	if( ! ref $config->{definition}->{font} )
-	{
-		$config->{definition}->{font} = [ $config->{definition}->{font} ];
-	}
-
-	return ( $config );
+        
+        my ( $self, $config ) = @_;
+        my $data = $config->{data};
+        local $_;
+        
+        # Force `fields' to be an array even with 1 element
+        if( ref ( $data->{fields} ) eq 'HASH' ) {
+                $data->{fields} = [ $data->{fields} ];
+        }
+        
+        if( ref ( $data->{groups} ) eq 'HASH' ) {
+                $data->{groups} = [ $data->{groups} ];
+        }
+        
+        # Now for `groups' section
+        for(@{ $data->{groups} }) {
+                
+                # Remove empty header/footer sections
+                # Force header/footer to array even if they have 1 element
+                if( ref ( $_->{header} ) eq 'HASH' ) {
+                        if( keys %{$_->{header}} ) {
+                                $_->{header} = [ $_->{header} ];
+                        } else {
+                                delete $_->{header};
+                        }
+                }
+                
+                if( ref ( $_->{footer} ) eq 'HASH' ) {
+                        if( keys %{$_->{footer}} ) {
+                                $_->{footer} = [ $_->{footer} ];
+                        } else {
+                                delete $_->{footer};
+                        }
+                }
+        }
+        
+        # Same as above for `page' structure
+        my $page = $data->{page};
+        if( ref ( $page->{header} ) eq 'HASH' ) {
+                $page->{header} = [ $page->{header} ];
+        }
+        if( ref ( $page->{footer} ) eq 'HASH' ) {
+                $page->{footer} = [ $page->{footer} ];
+        }
+        
+        # Same as above for font structure
+        if( ! ref $config->{definition}->{font} )
+        {
+                $config->{definition}->{font} = [ $config->{definition}->{font} ];
+        }
+        
+        return ( $config );
 }
 
 #
@@ -296,36 +296,43 @@ sub _adjust_struct {
 #
 sub save
 {
-	my($self, $cfg, $file) = @_;
-
-	$file ||= $self->file();
-
-	my $xml = XML::Simple->new(
-		AttrIndent => 1,
-		ForceArray => 1,
-		KeepRoot   => 1,
-		NoAttr     => 1,
-		NoSort     => 1,
-		RootName   => 'report',
-		XMLDecl    => 1,
-	);
-
-	my $xml_stream = $xml->XMLout($cfg);
-	my $ok = 0;
-
-	#warn 'opening file '.$file;
-
-	if( open(XML_REPORT, '>' . $file) )
-	{
-		#warn 'opened file';
-		$ok = print XML_REPORT $xml_stream;
-		#warn 'printed '.$ok.' on it';
-		$ok &&= close(XML_REPORT);
-		#warn 'closed '.$ok;
-	}
-
-	# Report saved?
-	return($ok);
+        
+        my($self, $cfg, $file) = @_;
+        
+        # $cfg is a hash:
+        # $cfg = {
+        #               data            ... the 'data' part of the PDF::ReportWriter object
+        #               definition      ... the top-level part of the PDF::ReportWriter object ( minus data )
+        
+        $file ||= $self->file();
+        
+        my $xml = XML::Simple->new(
+                AttrIndent => 1,
+                ForceArray => 1,
+                KeepRoot   => 1,
+                NoAttr     => 1,
+                NoSort     => 1,
+                RootName   => 'report',
+                XMLDecl    => 1,
+        );
+        
+        my $xml_stream = $xml->XMLout($cfg);
+        my $ok = 0;
+        
+        #warn 'opening file '.$file;
+        
+        if( open(XML_REPORT, '>' . $file) )
+        {
+                #warn 'opened file';
+                $ok = print XML_REPORT $xml_stream;
+                #warn 'printed '.$ok.' on it';
+                $ok &&= close(XML_REPORT);
+                #warn 'closed '.$ok;
+        }
+        
+        # Report saved?
+        return($ok);
+        
 }
 
 
@@ -351,20 +358,20 @@ or supply data connecting automatically to a DBI DSN, or who knows...
 The most useful usage for this class is through the C<PDF::ReportWriter::render_report()>
 call. If you really want an example of usage of standalone Report object, here it is:
 
-	# Create a blank report object
-	my $report = PDF::ReportWriter::Report->new();
-	my $config;
+        # Create a blank report object
+        my $report = PDF::ReportWriter::Report->new();
+        my $config;
 
-	# Load XML report definition
-	eval { $config = $report->load('/home/cosimo/myreport.xml') };
-	if( $@ ) {
-	    # Incorrect xml file!
-	    print 'Error in XML report:', $@, "\n";
-	}
+        # Load XML report definition
+        eval { $config = $report->load('/home/cosimo/myreport.xml') };
+        if( $@ ) {
+            # Incorrect xml file!
+            print 'Error in XML report:', $@, "\n";
+        }
 
-	# Now save the report object to xml file
-	my $ok = $report->save($config);
-	my $ok = $report->save($config, 'Copy of report.xml');
+        # Now save the report object to xml file
+        my $ok = $report->save($config);
+        my $ok = $report->save($config, 'Copy of report.xml');
 
 =head1 METHODS
 
@@ -389,17 +396,17 @@ Additional data sources can be defined, as in the following (fake) example:
     <report>
         ...
         <data>
-	    ...
-	    <datasource name="ldapdirectory">
-	    	<hostname>192.168.0.1</hostname>
-		<port>389</port>
-		<rootdn>o=Users,dc=domain,dc=com</rootdn>
-		<binddn>cn=DirectoryManager,dc=domain,dc=com</binddn>
-		<password>secret</password>
-	    </datasource>
-	    ...
-	</data>
-	...
+            ...
+            <datasource name="ldapdirectory">
+                    <hostname>192.168.0.1</hostname>
+                <port>389</port>
+                <rootdn>o=Users,dc=domain,dc=com</rootdn>
+                <binddn>cn=DirectoryManager,dc=domain,dc=com</binddn>
+                <password>secret</password>
+            </datasource>
+            ...
+        </data>
+        ...
     </report>
 
 =head2 get_macros()
@@ -412,10 +419,10 @@ Example:
     <!-- Xml report -->
     <report>
         <definition>
-	    <name>My Report</name>
-	    <info>
-	        <Author>${AUTHOR}</Author>
-		...
+            <name>My Report</name>
+            <info>
+                <Author>${AUTHOR}</Author>
+                ...
 
 A corresponding C<get_macros> method should return:
 
@@ -431,11 +438,11 @@ Loads the report definition from C<xml_file>. No, don't be afraid! This is a fri
 and nice xml file, not those ugly monsters that populate JavaLand. :-)
 Return value is an hashref with complete report profile.
 
-	my $report  = PDF::ReportWriter::Report->new();
-	my $profile = $report->load('myreport.xml');
-	if( ! $profile ) {
-		print "Something wrong in the XML?";
-	}
+        my $report  = PDF::ReportWriter::Report->new();
+        my $profile = $report->load('myreport.xml');
+        if( ! $profile ) {
+                print "Something wrong in the XML?";
+        }
 
 =head2 save( config [, xml_file ] )
 

@@ -46,6 +46,7 @@
                     <font_size>20</font_size>
                     <colour>blue</colour>
                     <align>left</align>
+                    <wrap_text>1</wrap_text>
                 </cell>
 
             </header>
@@ -57,7 +58,7 @@
 
             <!-- Year -->
             <field>
-                <name>Year</name>
+                <name>Year\nthing</name>
                 <index>0</index>
                 <percent>30</percent>
                 <font_size>12</font_size>
@@ -80,7 +81,10 @@
                 <percent>30</percent>
                 <font_size>12</font_size>
                 <align>right</align>
-                <type>number</type>
+                <format>
+                    <currency>1</currency>
+                    <separate_thousands>1</separate_thousands>
+                </format>
             </field>
             
         </fields>

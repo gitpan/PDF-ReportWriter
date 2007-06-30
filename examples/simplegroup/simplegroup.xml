@@ -6,7 +6,7 @@
     $Id: simplegroup.xml,v 1.1 2006/03/14 17:14:25 cosimo Exp $
 -->
 <report>
-
+    
     <definition>
         <name>A simple report with a group</name>
         <destination>simplegroup.pdf</destination>
@@ -19,20 +19,20 @@
         <x_margin>28.346</x_margin><!-- 10 mm -->
         <y_margin>28.346</y_margin>
     </definition>
-
+    
     <data>
-
+        
         <cell_borders>1</cell_borders>
-
+        
         <!-- 10 postscript points @ 72 dpi = 3.52 mm -->
         <field_headers_upper_buffer>10</field_headers_upper_buffer>
-
+        
         <headings>
             <background shape="box" colour="#408060"/>
         </headings>
-
+        
         <page>
-
+            
             <header>
                 <cell index="0">
                     <image path="simplegroup.png"/>
@@ -47,19 +47,19 @@
                     <align>center</align>
                 </cell>
             </header>
-
+            
         </page>
-
+        
         <groups>
-
+            
             <!-- This first group will sum up incomes, expenses and taxes by year
                  We must define an `aggregate_function' in the Year field -->
             <group>
-
+                
                 <name>GroupByYear</name>
                 <!-- Which column you want to group by? (starts from 0) -->
                 <data_column>0</data_column>
-
+                
                 <header>
                     <cell>
                         <index>0</index>
@@ -72,10 +72,10 @@
                         <colour>darkgreen</colour>
                     </cell>
                 </header>
-
+                
                 <!-- Show result of sum operation in group footer -->
                 <footer>
-
+                    
                     <cell>
                         <index>0</index>
                         <percent>80</percent>
@@ -87,7 +87,7 @@
                         <colour>white</colour>
                         <background shape="box" colour="darkgreen"/>
                     </cell>
-
+                    
                     <cell>
                         <index>0</index>
                         <percent>20</percent>
@@ -100,7 +100,7 @@
                         <colour>white</colour>
                         <background shape="ellipse" colour="#B87F40"/>
                     </cell>
-
+                    
                 </footer>
                 
             </group>
@@ -119,7 +119,7 @@
                 <align>center</align>
                 <header_colour>white</header_colour>
             </field>
-
+            
             <field>
                 <name>Note</name>
                 <index>1</index>
@@ -129,7 +129,7 @@
                 <align>left</align>
                 <header_colour>white</header_colour>
             </field>
-
+            
             <field>
                 <name>Amount</name>
                 <index>2</index>
@@ -137,13 +137,15 @@
                 <font_size>12</font_size>
                 <align>right</align>
                 <font>Courier</font>
-                <type>thousands_separated</type>
+                <format>
+                    <separate_thousands>1</separate_thousands>
+                </format>
                 <header_colour>white</header_colour>
                 <!-- This is necessary for the group to work correctly -->
                 <aggregate_function>sum</aggregate_function>
             </field>
         </fields>
-
+        
     </data>
-
+    
 </report>

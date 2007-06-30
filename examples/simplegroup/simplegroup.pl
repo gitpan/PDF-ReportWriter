@@ -11,7 +11,7 @@ use PDF::ReportWriter;
 
 my $rw = PDF::ReportWriter->new();
 my @data = (
-    [ 2002, 'Income',                 1000.000 ],
+    [ 2002, 'Income',                1000.000 ],
     [ 2002, 'Expenses',               -900.000 ],
     [ 2002, 'Taxes',                  -300.000 ],
     [ 2003, 'Income',                 2000.000 ],

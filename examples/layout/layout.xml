@@ -6,7 +6,7 @@
     $Id: layout.xml,v 1.1 2006/03/14 17:14:24 cosimo Exp $
 -->
 <report>
-
+    
     <definition>
         <name>A simple report with layout refinements</name>
         <destination>layout.pdf</destination>
@@ -19,23 +19,23 @@
         <x_margin>28.346</x_margin><!-- 10 mm -->
         <y_margin>28.346</y_margin>
     </definition>
-
+    
     <data>
-
+    
         <!-- Draw cell borders -->
         <cell_borders>1</cell_borders>
-
+        
         <!-- Leave some space between page headers
              and field headers (10 mm) -->
         <field_headers_upper_buffer>28.346</field_headers_upper_buffer>
-
+        
         <!-- Field headers should be drawn colored -->
         <headings>
             <background shape="box" colour="#408060"/>
         </headings>
-
+        
         <page>
-
+        
             <header>
                 <cell index="0">
                     <image path="layout.png"/>
@@ -50,9 +50,9 @@
                     <align>center</align>
                 </cell>
             </header>
-
+        
         </page>
-
+        
         <fields>
             <field>
                 <name>Year</name>
@@ -67,7 +67,7 @@
                 <align>center</align>
                 <header_colour>white</header_colour>
             </field>
-
+            
             <field>
                 <name>Note</name>
                 <index>1</index>
@@ -77,7 +77,7 @@
                 <align>left</align>
                 <header_colour>white</header_colour>
             </field>
-
+            
             <field>
                 <name>Amount</name>
                 <index>2</index>
@@ -86,11 +86,13 @@
                 <align>right</align>
                 <font>Courier</font>
                 <!-- Format of cell can be customized -->
-                <type>thousands_separated</type>
+                <format>
+                    <thousands_separated>1</thousands_separated>
+                </format>
                 <header_colour>white</header_colour>
             </field>
         </fields>
-
+        
     </data>
-
+    
 </report>

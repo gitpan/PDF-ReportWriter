@@ -137,7 +137,9 @@
                 <font_size>12</font_size>
                 <align>right</align>
                 <font>Courier</font>
-                <type>thousands_separated</type>
+                <format>
+                    <separate_thousands>1</separate_thousands>
+                </format>
                 <header_colour>white</header_colour>
                 <!-- This is necessary for the group to work correctly -->
                 <aggregate_function>sum</aggregate_function>
