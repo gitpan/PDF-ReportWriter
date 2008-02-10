@@ -17,6 +17,8 @@ package PDF::ReportWriter;
 use PDF::API2;
 use Image::Size;
 
+use Carp;
+
 use constant mm         => 72/25.4;             # 25.4 mm in an inch, 72 points in an inch
 use constant in         => 72;                  # 72 points in an inch
 
@@ -36,7 +38,7 @@ use constant TRUE       => 1;
 use constant FALSE      => 0;
 
 BEGIN {
-    $PDF::ReportWriter::VERSION = '1.4';
+    $PDF::ReportWriter::VERSION = '1.5';
 }
 
 sub new {
@@ -315,10 +317,18 @@ sub setup_cell_definitions {
     my ( $self, $cell_array, $type, $group, $group_type ) = @_;
     
     my $x = $self->{left_margin};
-    
+    my $row = 0;
     my $cell_counter = 0;
     
     for my $cell ( @{$cell_array} ) {
+        
+        # Support multi-line row definitions
+        if ( $x >= $self->{page_width} - $self->{right_margin} ) {
+            $row ++;
+            $x = $self->{left_margin};
+        }
+        
+        $cell->{row} = $row;
         
         # The cell's left-hand border position
         $cell->{x_border} = $x;
@@ -330,19 +340,19 @@ sub setup_cell_definitions {
         
         # The cell's text whitespace ( the minimum distance between the cell border and cell text )
         # Default to half the font size if not given
-        if ( ! $cell->{text_whitespace} ) {
+        if ( ! exists $cell->{text_whitespace} ) {
             $cell->{text_whitespace} = $cell->{font_size} >> 1;
         }
-
+        
         # Calculate cell height depending on type, etc...
         $cell->{height} = $self->calculate_cell_height( $cell );
-
+        
         # The cell's left-hand text position
         $cell->{x_text} = $x + $cell->{text_whitespace};
         
         # The cell's full width ( border to border )
         $cell->{full_width} = ( $self->{page_width} - ( $self->{left_margin} + $self->{right_margin} ) ) * $cell->{percent} / 100;
-
+        
         # The cell's maximum width of text
         $cell->{text_width} = $cell->{full_width} - ( $cell->{text_whitespace} * 2 );
         
@@ -423,35 +433,47 @@ sub setup_cell_definitions {
         if ( exists $cell->{type} ) {
             
             if ( $cell->{type} eq "currency" ) {
-                warn "\nEncountered a legacy type key with 'currency'.\n";
-                warn " Converting to the new 'format' key.\n";
-                warn " Please update your code accordingly\n\n";
+                
+                carp( "\nEncountered a legacy type key with 'currency'.\n"
+                    . " Converting to the new 'format' key.\n"
+                    . " Please update your code accordingly\n" );
+                
                 $cell->{format} = {
-                                        currency            => TRUE,
-                                        decimal_places      => 2,
-                                        decimal_fill        => TRUE,
-                                        separate_thousands  => TRUE
-                                  };
+                    currency            => TRUE,
+                    decimal_places      => 2,
+                    decimal_fill        => TRUE,
+                    separate_thousands  => TRUE
+                };
+                
                 delete $cell->{type};
+                
             } elsif ( $cell->{type} eq "currency:no_fill" ) {
-                warn "\nEncountered a legacy type key with 'currency:nofill'.\n";
-                warn " Converting to the new 'format' key.\n";
-                warn " Please update your code accordingly\n\n";
+                
+                carp( "\nEncountered a legacy type key with 'currency:nofill'.\n"
+                    .  " Converting to the new 'format' key.\n"
+                    .  " Please update your code accordingly\n\n" );
+                
                 $cell->{format} = {
-                                        currency            => TRUE,
-                                        decimal_places      => 2,
-                                        decimal_fill        => FALSE,
-                                        separate_thousands  => TRUE
-                                  };
+                    currency            => TRUE,
+                    decimal_places      => 2,
+                    decimal_fill        => FALSE,
+                    separate_thousands  => TRUE
+                };
+                
                 delete $cell->{type};
+                
             } elsif ( $cell->{type} eq "thousands_separated" ) {
-                warn "\nEncountered a legacy type key with 'thousands_separated'.\n";
-                warn " Converting to the new 'format' key.\n";
-                warn " Please update your code accordingly\n\n";
+                
+                carp( "\nEncountered a legacy type key with 'thousands_separated'.\n"
+                    .  " Converting to the new 'format' key.\n"
+                    .  " Please update your code accordingly\n\n" );
+                
                 $cell->{format} = {
-                                        separate_thousands  => TRUE
-                                  };
+                  separate_thousands  => TRUE
+                };
+                
                 delete $cell->{type};
+                
             }
             
         }
@@ -530,7 +552,7 @@ sub render_data {
                     bold                => TRUE,
                     font_size           => $field->{font_size},
                     text_whitespace     => $field->{text_whitespace},
-                    align               => 'centre',
+                    align               => $field->{header_align},
                     colour              => $field->{header_colour}
                 };
             }
@@ -546,26 +568,31 @@ sub render_data {
     
     # Page footers
     if ( $self->{data}->{page}->{footer} ) {
+        
         $self->setup_cell_definitions( $self->{data}->{page}->{footer}, "page_footer" );
+        
     } elsif ( ! $self->{data}->{page}->{footer} && ! $self->{data}->{page}->{footerless} ) {
+        
         # Set a default page footer if we haven't been explicitely told not to
         $self->{data}->{cell_height} = 12; # Default text_whitespace of font size * .5
+        
         $self->{data}->{page}->{footer} = [
-                                            {
-                                                percent         => 50,
-                                                font_size       => 8,
-                                                text            => "Rendered on \%TIME\%",
-                                                align           => 'left',
-                                                bold            => FALSE
-                                            },
-                                            {
-                                                percent         => 50,
-                                                font_size       => 8,
-                                                text            => "Page \%PAGE\% of \%PAGES\%",
-                                                align           => 'right',
-                                                bold            => FALSE
-                                            }
-                                          ];
+            {
+                percent         => 50,
+                font_size       => 8,
+                text            => "Rendered on \%TIME\%",
+                align           => 'left',
+                bold            => FALSE
+            },
+            {
+                percent         => 50,
+                font_size       => 8,
+                text            => "Page \%PAGE\% of \%PAGES\%",
+                align           => 'right',
+                bold            => FALSE
+            }
+        ];
+                                          
         $self->setup_cell_definitions( $self->{data}->{page}->{footer}, 'page_footer' );
     }
     
@@ -607,11 +634,11 @@ sub render_data {
     
     # Calculate the y space needed for page footers
     my $size_calculation = $self->calculate_y_needed(
-                                                        {
-                                                            cells               => $self->{data}->{page}->{footer},
-                                                            max_cell_height     => $self->{data}->{page_footer_max_cell_height}
-                                                        }
-                                                    );
+        {
+            cells               => $self->{data}->{page}->{footer},
+            max_cell_height     => $self->{data}->{page_footer_max_cell_height}
+        }
+    );
     
     $self->{page_footer_and_margin} = $size_calculation->{current_height} + $self->{lower_margin};
     
@@ -628,10 +655,10 @@ sub render_data {
         # returns whether any of the new groups encounted have requested a page break
         
         my $want_new_page = $self->assemble_group_header_queue(
-                                                                $row,
-                                                                $row_counter,
-                                                                FALSE
-                                                              );
+            $row,
+            $row_counter,
+            FALSE
+        );
         
         if ( ! $want_new_page ) {
             
@@ -639,12 +666,12 @@ sub render_data {
             # whether everything will fit on the page
             
             my $size_calculation = $self->calculate_y_needed(
-                                                                {
-                                                                    cells               => $self->{data}->{fields},
-                                                                    max_cell_height     => $self->{data}->{max_cell_height},
-                                                                    row                 => $row
-                                                                }
-                                                            );
+                {
+                    cells               => $self->{data}->{fields},
+                    max_cell_height     => $self->{data}->{max_cell_height},
+                    row                 => $row
+                }
+            );
             
             if ( $self->{y} - ( $size_calculation->{y_needed} + $self->{page_footer_and_margin} ) < 0 ) {
                 
@@ -672,10 +699,10 @@ sub render_data {
                 $self->{group_header_queue} = undef;
                 
                 $want_new_page = $self->assemble_group_header_queue(
-                                                                        $row,
-                                                                        $row_counter,
-                                                                        TRUE
-                                                                   );
+                    $row,
+                    $row_counter,
+                    TRUE
+                );
                 
             }
             
@@ -688,12 +715,12 @@ sub render_data {
         }
 
         $self->render_row(
-                $self->{data}->{fields},
-                $row,
-                'data',
-                $self->{data}->{max_cell_height},
-                $self->{data}->{upper_buffer},
-                $self->{data}->{lower_buffer}
+            $self->{data}->{fields},
+            $row,
+            'data',
+            $self->{data}->{max_cell_height},
+            $self->{data}->{upper_buffer},
+            $self->{data}->{lower_buffer}
         );
         
         # Reset the need_data_header flag after rendering a data row ...
@@ -786,13 +813,13 @@ sub fetch_group_results {
     
     # First do a little error checking
     if ( ! exists $self->{data}->{cell_mapping}->{ $options->{cell} } ) {
-        warn "\nPDF::ReportWriter::fetch_group_results called with an invalid cell: $options->{cell}\n\n";
+        carp( "\nPDF::ReportWriter::fetch_group_results called with an invalid cell: $options->{cell}\n\n" );
         return;
     }
     
     if ( ! exists $self->{data}->{fields}[ $self->{data}->{cell_mapping}->{ $options->{cell} } ]->{group_results}->{ $options->{group} } ) {
-        warn "\nPDF::ReportWriter::fetch_group_results called with an invalid group: $options->{group} ...\n"
-            . " ... check that the cell $options->{cell} has an aggregate function defined, and that the group $options->{group} exists\n";
+        caro( "\nPDF::ReportWriter::fetch_group_results called with an invalid group: $options->{group} ...\n"
+            . " ... check that the cell $options->{cell} has an aggregate function defined, and that the group $options->{group} exists\n" );
         return;
     }
     
@@ -806,7 +833,7 @@ sub page_template
 {
     
     my $self     = shift;
-    my $pdf_tmpl = $self->{template};
+    my $pdf_tmpl = shift || $self->{template}; # TODO document page_template and optional override
     my $new_page;
     my $user_warned = 0;
     
@@ -915,13 +942,13 @@ sub group_header {
     }
     
     $self->render_row(
-                        $group->{header},
-                        $group->{value},
-                        'group_header',
-                        $group->{header_max_cell_height},
-                        $group->{header_upper_buffer},
-                        $group->{header_lower_buffer}
-                     );
+        $group->{header},
+        $group->{value},
+        'group_header',
+        $group->{header_max_cell_height},
+        $group->{header_upper_buffer},
+        $group->{header_lower_buffer}
+    );
     
     $self->{y} -= $group->{header_lower_buffer};
     
@@ -1000,20 +1027,36 @@ sub calculate_cell_height {
 sub calculate_y_needed {
     
     my ( $self, $options ) = @_;
-
+    
+    # This function calculates the y-space needed to render a particular row,
+    # and returns it to the caller in the form of:
+    # {
+    #    current_height  => $current_height,        # LEGACY!
+    #    y_needed        => $y_needed,
+    #    row_heights     => \@row_heights
+    # };
+    
     # Unpack options hash
     my $cells               = $options->{cells};
     my $max_cell_height     = $options->{max_cell_height};
     my $row                 = $options->{row};
-
+    
     # We've just been passed the max_cell_height
-    # This will be all we need if we are only rendering text
+    # This will be all we need if we are
+    # only rendering single-line text
+    
+    # In the case of data render cycles,
+    # the max_cell_height is taken from $self->{data}->{max_cell_height},
+    # which is in turn set by setup_cell_definitions(),
+    # which goes over each cell with calculate_cell_height()
+    
     my $current_height      = $max_cell_height;
     
     # Search for an image in the current row
     # If one is encountered, adjust our $y_needed according to scaling definition
     
     my $counter = 0;
+    my @row_heights;
     
     for my $cell ( @{$options->{cells}} ) {
         
@@ -1074,8 +1117,13 @@ sub calculate_y_needed {
             } else {
                 
                 # no scaling or hard-coded height defined
-                if ( ( $imgdata{img_y} + $cell->{image}->{buffer} << 1 ) > ( $self->{y} - $self->{page_footer_and_margin} ) ) {
-                    $imgdata{y_scale_ratio} = ( $imgdata{img_y} + $cell->{image}->{buffer} << 1 ) / ( $self->{y} - $self->{page_footer_and_margin} );
+                
+                # TODO Check with Cosimo: what's the << operator for here?
+                #if ( ( $imgdata{img_y} + $cell->{image}->{buffer} << 1 ) > ( $self->{y} - $self->{page_footer_and_margin} ) ) {
+                if ( $imgdata{img_y} > ( $self->{y} - $self->{page_footer_and_margin} - ( $cell->{image}->{buffer} * 2) ) ) {
+                    #$imgdata{y_scale_ratio} = ( $imgdata{img_y} + $cell->{image}->{buffer} << 1 ) / ( $self->{y} - $self->{page_footer_and_margin} );
+                    #$imgdata{y_scale_ratio} = ( $self->{y} - $self->{page_footer_and_margin} ) / ( $imgdata{img_y} + ( $cell->{image}->{buffer} *2 ) );
+                    $imgdata{y_scale_ratio} = ( $self->{y} - $self->{page_footer_and_margin} - ( $cell->{image}->{buffer} * 2 ) ) / ( $imgdata{img_y} );
                 } else {
                     $imgdata{y_scale_ratio} = 1;
                 }
@@ -1121,15 +1169,19 @@ sub calculate_y_needed {
             # Store image data for future reference
             $cell->{image}->{tmp} = \%imgdata;
             
-        } elsif ( ( ref $row eq "ARRAY" ) || ( exists $cell->{text} ) ) {
+#        } elsif ( ( ref $row eq "ARRAY" ) || ( exists $cell->{text} ) ) {
+        } else {
             
             my $text;
             
             # If $options->{row} has been passed ( and is an array ), we're in a data-rendering cycle
+            
             if ( ref $row eq "ARRAY" ) {
                 $text = $$row[$counter];
-            } else {
+            } elsif ( $cell->{text} ) {
                 $text = $cell->{text};
+            } else {
+                $text = $row;
             }
             
             # We need to set the font here so that wrap_text() can accurately calculate where to wrap
@@ -1137,12 +1189,12 @@ sub calculate_y_needed {
             
             if ( $cell->{wrap_text} ) {
                 $text = $self->wrap_text(
-                                            {
-                                                string          => $text,
-                                                text_width      => $cell->{text_width},
-                                                strip_breaks    => $cell->{strip_breaks}
-                                            }
-                                        );
+                    {
+                        string          => $text,
+                        text_width      => $cell->{text_width},
+                        strip_breaks    => $cell->{strip_breaks}
+                    }
+                );
             }
             
             my $no_of_new_lines = $text =~ tr/\n/\n/;
@@ -1151,6 +1203,12 @@ sub calculate_y_needed {
                 $current_height = ( 1 + $no_of_new_lines ) * ( $cell->{font_size} + $cell->{text_whitespace} );
             }
             
+        }
+        
+        # If there is *no* row height set yet, or if it's set but is lower than the current height,
+        # set it to the current height
+        if ( ( ! $row_heights[ $cell->{row} ] ) || ( $current_height > $row_heights[ $cell->{row} ] ) ) {
+            $row_heights[ $cell->{row} ] = $current_height;
         }
         
         $counter ++;
@@ -1183,9 +1241,10 @@ sub calculate_y_needed {
     }
     
     return {
-                current_height  => $current_height,
-                y_needed        => $y_needed
-           };
+        current_height  => $current_height,
+        y_needed        => $y_needed,
+        row_heights     => \@row_heights
+    };
     
 }
 
@@ -1211,28 +1270,26 @@ sub render_row {
     
     # Calculate the y space required, including queued group footers
     my $size_calculation = $self->calculate_y_needed(
-                                                        {
-                                                            cells           => $cells,
-                                                            max_cell_height => $max_cell_height,
-                                                            row             => $row
-                                                        }
-                                                    );
+        {
+            cells           => $cells,
+            max_cell_height => $max_cell_height,
+            row             => $row
+        }
+    );
     
-    # Unpack size_calculation results ( easier to read like this )
-    my $current_height  = $size_calculation->{current_height};
-    my $y_needed        = $size_calculation->{y_needed};
-
     # Page Footer / New Page / Page Header if necessary, otherwise move down by $current_height
     # ( But don't force a new page if we're rendering a page footer )
     
     # Check that total y space needed does not exceed page size.
     # In that case we cannot keep adding more pages, which causes
     # horrible out of memory errors
-    $y_needed += $self->{page_footer_and_margin};
+    
+    # TODO Should this be taken into account in calculate_y_needed?
+    $size_calculation->{y_needed} += $self->{page_footer_and_margin};
 
     if ( $type ne 'page_footer'
-            && $y_needed <= $self->{page_height}
-            && $self->{y} - $y_needed < 0
+            && $size_calculation->{y_needed} <= $self->{page_height}
+            && $self->{y} - $size_calculation->{y_needed} < 0
        )
     {
         $self->new_page;
@@ -1252,17 +1309,21 @@ sub render_row {
         
         # Now render field headers row
         $self->render_row(
-                            $self->{data}->{field_headers},
-                            0,
-                            'header',
-                            $self->{data}->{max_field_header_height},
-                            $self->{data}->{field_header_upper_buffer},
-                            $self->{data}->{field_header_lower_buffer}
-                         );
+            $self->{data}->{field_headers},
+            0,
+            'header',
+            $self->{data}->{max_field_header_height},
+            $self->{data}->{field_header_upper_buffer},
+            $self->{data}->{field_header_lower_buffer}
+        );
+        
     }
     
     # Move down for upper_buffer, and then for the current row height
-    $self->{y} -= $upper_buffer + $current_height;
+#    $self->{y} -= $upper_buffer + $current_height;
+    
+    # Move down for upper_buffer, and then for the FIRST row height
+    $self->{y} -= $upper_buffer;
     
     #
     # Render row
@@ -1274,15 +1335,27 @@ sub render_row {
                         row_type            => $type,       # Row type (data, header, group, footer)
                         cell_counter        => 0,
                         cell_y_border       => $self->{y},
-                        cell_full_height    => $current_height,
+#                        cell_full_height    => $current_height,
                         page                => $self->{pages}->[ scalar( @{$self->{pages}} ) - 1 ],
                         page_no             => scalar( @{$self->{pages}} ) - 1
                   };
     
+    my $this_row = -1; # Forces us to move down immediately
+    
     for my $cell ( @{$cells} ) {
+        
+        # If we're entering a new line ( ie multi-line rows ),
+        # then shift our Y position and set the new cell_full_height
+        
+        if ( $this_row != $cell->{row} ) {
+            $self->{y} -= $size_calculation->{row_heights}[ $cell->{row} ];
+            $options->{cell_full_height} = $size_calculation->{row_heights}[ $cell->{row} ];
+            $this_row = $cell->{row};
+        }
         
         $options->{cell} = $cell;
         
+        # TODO Apparent we're not looking in 'text' key for hard-coded text any more. Add back ...
         if ( ref( $options->{current_row} ) eq 'ARRAY' ) {
             $options->{current_value} = $options->{current_row}->[ $options->{cell_counter} ];
         } else {
@@ -1438,17 +1511,31 @@ sub render_cell_background {
     
     my ( $self, $cell, $opt ) = @_;
     
-    unless ( exists $cell->{background} ) {
+    my $background;
+    
+    if ( $cell->{background_func} ) {
+        if ( $self->{debug} ) {
+            print "\nRunning background_func() \n";
+        }
+        
+        $background = $cell->{background_func}($opt->{current_value}, $opt->{current_row}, $opt);
+    }
+    else {
+    	$background = $cell->{background};
+    }
+
+    unless ( defined $background ) {
         return;
     }
     
     my $current_height = $opt->{cell_full_height};
+
     
-    if ( $cell->{background}->{shape} ) {
+    if ( $background->{shape} ) {
         
-        if ( $cell->{background}->{shape} eq "ellipse" ) {
+        if ( $background->{shape} eq "ellipse" ) {
             
-            $self->{shape}->fillcolor( $cell->{background}->{colour} );
+            $self->{shape}->fillcolor( $background->{colour} );
             
             $self->{shape}->ellipse(
                 $cell->{x_border} + ( $cell->{full_width} >> 1 ),       # x centre
@@ -1459,9 +1546,9 @@ sub render_cell_background {
             
             $self->{shape}->fill;
             
-        } elsif ( $cell->{background}->{shape} eq "box" ) {
+        } elsif ( $background->{shape} eq "box" ) {
             
-            $self->{shape}->fillcolor( $cell->{background}->{colour} );
+            $self->{shape}->fillcolor( $background->{colour} );
             
             $self->{shape}->rect(
                     $cell->{x_border},                                  # left border
@@ -1479,10 +1566,10 @@ sub render_cell_background {
     #
     # Now render cell background borders
     #
-    if ( $cell->{background}->{border} ) {
+    if ( $background->{border} ) {
         
         # Cell Borders
-        $self->{line}->strokecolor( $cell->{background}->{border} );
+        $self->{line}->strokecolor( $background->{border} );
         
         # TODO Move the regex setuff into setup_cell_definitions()
         # so we don't have to regex per cell, which is
@@ -1491,9 +1578,9 @@ sub render_cell_background {
         # If the 'borders' key does not exist then draw all borders
         # to support code written before this was added.
         # A value of 'all' can also be used.
-        if ( ( ! exists $cell->{background}->{borders} ) || ( uc $cell->{background}->{borders} eq 'ALL' ) )
+        if ( ( ! exists $background->{borders} ) || ( uc $background->{borders} eq 'ALL' ) )
         {
-            $cell->{background}->{borders} = "tblr";
+            $background->{borders} = "tblr";
         }
         
         # The 'borders' key looks for the following chars in the string
@@ -1502,7 +1589,7 @@ sub render_cell_background {
         #  l or L - Left Border Line
         #  r or R - Right Border Line
         
-        my $cell_bb = $cell->{background}->{borders};
+        my $cell_bb = $background->{borders};
         
         # Bottom Horz Line
         if ( $cell_bb =~ /[bB]/ ) {
@@ -1787,7 +1874,7 @@ sub render_cell_text {
         if ( $self->{debug} ) {
             print "\nRunning colour_func() on data: " . $string . "\n";
         }
-        $self->{txt}->fillcolor( $cell->{colour_func}( $string, $row ) || "black" );
+        $self->{txt}->fillcolor( $cell->{colour_func}( $string, $row, $opt ) || "black" );
     } else {
         $self->{txt}->fillcolor( $cell->{colour} || "black" );
     }
@@ -1851,13 +1938,19 @@ sub render_cell_text {
     # Handle multiline text
     
     # Whatever the format (Dos/Unix/Mac/Amiga), this should correctly split rows
-    my @text_rows = split /[\r\n]+\s*/ => $string;
+    # NOTE: This breaks rendering of blank lines
+    # TODO Check with Cosimo why we're stripping blank rows
+    #my @text_rows = split /[\r\n]+\s*/ => $string;
+    
+    my @text_rows = split /\n/, $string;
     
     for $string ( @text_rows ) {
         
         # Skip empty lines ... but NOT strings that eq "0"
         # We still want to be able to render the character 0
-        next unless ( $string || $string eq "0" );
+        # TODO Why are we doing this? Don't. It breaks rendering blank lines
+        
+        # next unless ( $string || $string eq "0" );
         
         # Skip strings with only whitespace
         # TODO Why is this here. It breaks rendering for strings that start with a space character
@@ -1868,7 +1961,7 @@ sub render_cell_text {
         # Maybe it hasn't been set...
         
         if ( $cell->{text_width} > 0 ) {
-            while ( $string && $self->{txt}->advancewidth($string) > $cell->{text_width}) {
+            while ( $string && $self->{txt}->advancewidth( $string ) > $cell->{text_width}) { 
                 chop($string);
             }
         }
@@ -1881,28 +1974,31 @@ sub render_cell_text {
         # We have to do X alignment inside the multiline text loop here ...
         my $x_pos = exists $cell->{x} ? $cell->{x} : $cell->{x_text};
         
-        if( $align eq 'l' ) {
+        if ( $align eq 'l' ) {
             
             # Default alignment if left-aligned
             $self->{txt}->translate( $x_pos, $y_pos );
-            $self->{txt}->text($string);
+            $self->{txt}->text( $string );
             
-        } elsif( $align eq 'c' || $type eq 'header' ) {
+        } elsif ( $align eq 'c' || $type eq 'header' ) {
             
             # Calculate the width of the string, and move to the right so there's an
             # even gap at both sides, and render left-aligned from there
-            my $string_width = $self->{txt}->advancewidth($string);
+            
+            my $string_width = $self->{txt}->advancewidth( $string );
+            
             my $x_offset = $cell_abs_pos
                 ? - ($string_width >> 1)
-                : ($cell->{text_width} - $string_width) >> 1;
+                : ( $cell->{text_width} - $string_width ) >> 1;
+             
             $x_pos += $x_offset;
             $self->{txt}->translate( $x_pos, $y_pos );
-            $self->{txt}->text($string);
+            $self->{txt}->text( $string );
             
-        } elsif ( $align eq 'r') {
+        } elsif ( $align eq 'r' ) {
             
             if( $cell_abs_pos ) {
-                $x_pos -= $self->{txt}->advancewidth($string) >> 1;
+                $x_pos -= $self->{txt}->advancewidth( $string ) >> 1;
             } else {
                 $x_pos += $cell->{text_width};
             }
@@ -1910,6 +2006,46 @@ sub render_cell_text {
             $self->{txt}->translate( $x_pos, $y_pos );
             $self->{txt}->text_right($string);
             
+        } elsif ( $align eq 'j' ) {
+           
+            # Justify text
+            # This is largely taken from a brilliant example at: http://incompetech.com/gallimaufry/perl_api2_justify.html
+            
+            # Set up the control
+            $self->{txt}->charspace( 0 );
+            
+            # Calculate the width at this default spacing 
+            my $standard_width = $self->{txt}->advancewidth( $string );
+            
+            # Now the experiment
+            $self->{txt}->charspace( 1 );
+             
+            my $experiment_width = $self->{txt}->advancewidth( $string );
+            
+            # SINCE 0 -> $nominal   AND   1 -> $experiment ... WTF was he on about here?
+            if ( $standard_width ) {
+                
+                my $diff = $experiment_width - $standard_width;
+                my $min  = $cell->{text_width} - $standard_width;
+                my $target = $min / $diff;
+                
+                # TODO Provide a 'maxcharspace' option? How about a normal charspace option?
+                # TODO Is there a more elegent way to do this?
+                
+                $target = 0 if ( $target > 1 ); # charspacing > 1 looks kinda dodgy, so don't bother with justifying in this case
+                
+                # Set the target charspace
+                $self->{txt}->charspace( $target );
+                
+                # Render
+                $self->{txt}->translate( $x_pos, $y_pos );
+                $self->{txt}->text( $string );
+                
+                # Default back to 0 charspace
+                $self->{txt}->charspace( 0 );
+                
+            }
+           
         }
         
         # XXX Empirical result? Is there a text line_height information?
@@ -1959,6 +2095,11 @@ sub wrap_text {
     
     foreach my $paragraph ( @paragraphs ) {
         
+        # We need to do this to preserve blank lines ( it slips through the loop below )
+        if ( $paragraph eq '' ) {
+            push @wrapped_text, $paragraph;
+        }
+        
         while ( $paragraph ) {
             
             my $position    = 0;
@@ -1967,7 +2108,7 @@ sub wrap_text {
             while (
                     ( $self->{txt}->advancewidth( substr( $paragraph, 0, $position ) ) < $text_width )
                         && ( $position < length( $paragraph ) )
-                  ) {
+            ) {
                 if ( substr( $paragraph, $position, 1 ) eq " " ) {
                     $last_space = $position;
                 }
@@ -2536,6 +2677,10 @@ The width of the cell, as a percentage of the total available width.
 The actual width will depend on the paper definition ( size and orientation )
 and the x_margin in your report_definition.
 
+In most cases, a collection of cells should add up to 100%. For multi-line 'rows',
+you can continue defining cells beyond 100% width, and these will spill over onto the next line.
+See the section on MULTI-LINE ROWS, below.
+
 =back
 
 =head2 x
@@ -2595,6 +2740,15 @@ The colour to use for rendering data headers ( ie field names ).
 
 =back
 
+=head2 header_align
+
+=over 4
+
+The alignment of the data headers ( ie field names ). 
+Possible values are "left", "right" and "centre" ( or now "center", also ).
+
+=back
+
 =head2 text
 
 =over 4
@@ -2651,7 +2805,69 @@ an array reference containing the current row
 
 =back
 
+=head3 options
+
+=over 4
+
+a hash containing the current rendering options:
+
+ {
+   current_row          - the current row of data
+   row_type             - the current row type (data, group_header, ...)
+   current_value        - the current value of this cell
+   cell                 - the cell definition ( get x position and width from this )
+   cell_counter         - position of the current cell in the row ( 0 .. n - 1 )
+   cell_y_border        - the bottom of the cell
+   cell_full_height     - the height of the cell
+   page                 - the current page ( a PDF::API2 page )
+   page_no              - the current page number
+ }
+
+=back
+
 Note that prior to version 1.4, we only passed the value.
+
+=back
+
+=head2 background_func
+
+=over 4
+
+A user-defined sub that returns a colour for the cell background. Your background_func will be passed:
+
+=head3 value
+
+=over 4
+
+The current cell value
+
+=back
+
+=head3 row
+
+=over 4
+
+an array reference containing the current row
+
+=back
+
+=head3 options
+
+=over 4
+
+a hash containing the current rendering options:
+
+ {
+   current_row          - the current row of data
+   row_type             - the current row type (data, group_header, ...)
+   current_value        - the current value of this cell
+   cell                 - the cell definition ( get x position and width from this )
+   cell_counter         - position of the current cell in the row ( 0 .. n - 1 )
+   cell_y_border        - the bottom of the cell
+   cell_full_height     - the height of the cell
+   page                 - the current page ( a PDF::API2 page )
+   page_no              - the current page number
+ }
 
 =back
 
@@ -2679,7 +2895,7 @@ The sub will receive a hash of options:
 
 =over 4
 
-Possible values are "left", "right" and "centre" ( or now "center", also ).
+Possible values are "left", "right", "centre" ( or now "center", also ), and "justified"
 
 =back
 
@@ -2743,6 +2959,7 @@ This key is a hash that controls numeric and currency formatting. Possible keys 
    decimal_places       - an INT that indicates how many decimal places to round values to
    decimal_fill         - a BOOLEAN that causes all decimal values to be filled to decimal_places places
    separate_thousands   - a BOOLEAN that turns on thousands separating ( ie with commas )
+   null_if_zero         - a BOOLEAN that causes zero amounts to render nothing ( NULL )
  }
 
 =back
@@ -3214,6 +3431,18 @@ If you don't specify a page footer, one will be supplied for you. This is to pro
 compatibility with previous versions, which had page footers hard-coded. If you want to supress
 this behaviour, then set a value for $self->{data}->{page}->{footerless}
 
+=head1 MULTI-LINE ROWS
+
+=over 4
+
+You can define 'multi-line' rows of cell definitions by simply appending all subsequent lines
+to the array of cell definitions. When PDF::ReportWriter sees a cell with a percentage that would
+push the combined percentage beyond 100%, a new-line is assumed.
+
+=back
+
+=back
+
 =head1 METHODS
 
 =head2 new ( report_definition )
@@ -3305,6 +3534,26 @@ get access to those running totals.
 
 =back
 
+=head2 new_page
+
+=over 4
+
+Creates a new page, which in turn calls ->page_template ( see below ).
+
+=back
+
+=head2 page_template ( [ path_to_template ] )
+
+=over 4
+
+This function creates a new page ( and is in fact called by ->new_page ).<
+If called with no arguements, it will either use default template, or if there is none,
+it will simply create a blank page. Alternatively, you can pass it the path to a PDF
+to use as a template for the new page ( the 1st page of the PDF that you pass will
+be used ).
+
+=back
+ 
 =head2 save
 
 =over 4

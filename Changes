@@ -1,5 +1,26 @@
 CHANGELOG
 
+Version 1.5, released 10-Feb-2008
+
+    Patches from Dietrich Streifert <dietrich.streifert@googlemail.com>
+        A background coloring function similar to the colour_func
+            implementation. Additionally the current cell rendering options should
+            be passed to both rendering functions
+        The possibility to set the aligment of the row header
+        Documented above
+    
+    Fixed scaling image down if they're too big to fit on page
+    Fixed more optimisations that were breaking rendering of blank lines ( \n )
+    page_template() now supports being passed a path to a template file
+        ( ie you can override the default template )
+    Fixed off-by-one error in wrap_text
+    Completed multi-line row support
+        ( ie 'row' definitions can spill over 100% of x-space, in effect
+          covering >1 rows )
+    Added text justification support ( and documented )
+        ( set 'align' property to 'justified' )
+    Fixed clobbering of a cell's text_whitespace property
+
 Version 1.4, released 01-Jul-2007
 
     Patches from Cosimo Streppone <cosimo@cpan.org>:
